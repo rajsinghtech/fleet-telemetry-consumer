@@ -109,82 +109,100 @@ func main() {
         for _, datum := range vehicleData.Data {
             fieldName := datum.Key.String() // Get the field name from the enum
             value := datum.Value
-
-            var numericValue float64
-
             switch v := value.Value.(type) {
             case *protos.Value_DoubleValue:
-                numericValue = v.DoubleValue
+                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(v.DoubleValue)
             case *protos.Value_FloatValue:
-                numericValue = float64(v.FloatValue)
+                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.FloatValue))
             case *protos.Value_IntValue:
-                numericValue = float64(v.IntValue)
+                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.IntValue))
             case *protos.Value_LongValue:
-                numericValue = float64(v.LongValue)
+                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.LongValue))
             case *protos.Value_BooleanValue:
+                var numericValue float64
                 if v.BooleanValue {
                     numericValue = 1.0
                 } else {
                     numericValue = 0.0
                 }
-            case *protos.Value_ChargingValue:
-                numericValue = float64(v.ChargingValue.Number())
-            case *protos.Value_ShiftStateValue:
-                numericValue = float64(v.ShiftStateValue.Number())
-            case *protos.Value_LaneAssistLevelValue:
-                numericValue = float64(v.LaneAssistLevelValue.Number())
-            case *protos.Value_ScheduledChargingModeValue:
-                numericValue = float64(v.ScheduledChargingModeValue.Number())
-            case *protos.Value_SentryModeStateValue:
-                numericValue = float64(v.SentryModeStateValue.Number())
-            case *protos.Value_SpeedAssistLevelValue:
-                numericValue = float64(v.SpeedAssistLevelValue.Number())
-            case *protos.Value_BmsStateValue:
-                numericValue = float64(v.BmsStateValue.Number())
-            case *protos.Value_BuckleStatusValue:
-                numericValue = float64(v.BuckleStatusValue.Number())
-            case *protos.Value_CarTypeValue:
-                numericValue = float64(v.CarTypeValue.Number())
-            case *protos.Value_ChargePortValue:
-                numericValue = float64(v.ChargePortValue.Number())
-            case *protos.Value_ChargePortLatchValue:
-                numericValue = float64(v.ChargePortLatchValue.Number())
-            case *protos.Value_CruiseStateValue:
-                numericValue = float64(v.CruiseStateValue.Number())
-            case *protos.Value_DriveInverterStateValue:
-                numericValue = float64(v.DriveInverterStateValue.Number())
-            case *protos.Value_HvilStatusValue:
-                numericValue = float64(v.HvilStatusValue.Number())
-            case *protos.Value_WindowStateValue:
-                numericValue = float64(v.WindowStateValue.Number())
-            case *protos.Value_SeatFoldPositionValue:
-                numericValue = float64(v.SeatFoldPositionValue.Number())
-            case *protos.Value_TractorAirStatusValue:
-                numericValue = float64(v.TractorAirStatusValue.Number())
-            case *protos.Value_FollowDistanceValue:
-                numericValue = float64(v.FollowDistanceValue.Number())
-            case *protos.Value_ForwardCollisionSensitivityValue:
-                numericValue = float64(v.ForwardCollisionSensitivityValue.Number())
-            case *protos.Value_GuestModeMobileAccessValue:
-                numericValue = float64(v.GuestModeMobileAccessValue.Number())
-            case *protos.Value_TrailerAirStatusValue:
-                numericValue = float64(v.TrailerAirStatusValue.Number())
-            case *protos.Value_DetailedChargeStateValue:
-                numericValue = float64(v.DetailedChargeStateValue.Number())
+                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(numericValue)
             case *protos.Value_LocationValue:
                 // Handle LocationValue separately
-                lat := v.LocationValue.Latitude
-                lon := v.LocationValue.Longitude
-                vehicleDataGauge.WithLabelValues("Latitude", vehicleData.Vin).Set(lat)
-                vehicleDataGauge.WithLabelValues("Longitude", vehicleData.Vin).Set(lon)
-                continue // Skip the rest since we've handled this case
+                vehicleDataGauge.WithLabelValues("Latitude", vehicleData.Vin).Set(v.LocationValue.Latitude)
+                vehicleDataGauge.WithLabelValues("Longitude", vehicleData.Vin).Set(v.LocationValue.Longitude)
+            case *protos.Value_DoorValue:
+                // Handle Doors by setting individual door states
+                doors := v.DoorValue
+                doorFields := map[string]bool{
+                    "DriverFront":    doors.DriverFront,
+                    "PassengerFront": doors.PassengerFront,
+                    "DriverRear":     doors.DriverRear,
+                    "PassengerRear":  doors.PassengerRear,
+                    "TrunkFront":     doors.TrunkFront,
+                    "TrunkRear":      doors.TrunkRear,
+                }
+                for doorName, state := range doorFields {
+                    var numericValue float64
+                    if state {
+                        numericValue = 1.0
+                    } else {
+                        numericValue = 0.0
+                    }
+                    vehicleDataGauge.WithLabelValues(doorName, vehicleData.Vin).Set(numericValue)
+                }
+            case *protos.Value_TimeValue:
+                // Handle TimeValue by converting to seconds since midnight
+                timeValue := v.TimeValue
+                totalSeconds := float64(timeValue.Hour*3600 + timeValue.Minute*60 + timeValue.Second)
+                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(totalSeconds)
+            case *protos.Value_ChargingValue:
+                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.ChargingValue.Number()))
+            case *protos.Value_ShiftStateValue:
+                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.ShiftStateValue.Number()))
+            case *protos.Value_LaneAssistLevelValue:
+                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.LaneAssistLevelValue.Number()))
+            case *protos.Value_ScheduledChargingModeValue:
+                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.ScheduledChargingModeValue.Number()))
+            case *protos.Value_SentryModeStateValue:
+                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.SentryModeStateValue.Number()))
+            case *protos.Value_SpeedAssistLevelValue:
+                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.SpeedAssistLevelValue.Number()))
+            case *protos.Value_BmsStateValue:
+                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.BmsStateValue.Number()))
+            case *protos.Value_BuckleStatusValue:
+                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.BuckleStatusValue.Number()))
+            case *protos.Value_CarTypeValue:
+                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.CarTypeValue.Number()))
+            case *protos.Value_ChargePortValue:
+                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.ChargePortValue.Number()))
+            case *protos.Value_ChargePortLatchValue:
+                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.ChargePortLatchValue.Number()))
+            case *protos.Value_CruiseStateValue:
+                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.CruiseStateValue.Number()))
+            case *protos.Value_DriveInverterStateValue:
+                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.DriveInverterStateValue.Number()))
+            case *protos.Value_HvilStatusValue:
+                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.HvilStatusValue.Number()))
+            case *protos.Value_WindowStateValue:
+                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.WindowStateValue.Number()))
+            case *protos.Value_SeatFoldPositionValue:
+                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.SeatFoldPositionValue.Number()))
+            case *protos.Value_TractorAirStatusValue:
+                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.TractorAirStatusValue.Number()))
+            case *protos.Value_FollowDistanceValue:
+                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.FollowDistanceValue.Number()))
+            case *protos.Value_ForwardCollisionSensitivityValue:
+                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.ForwardCollisionSensitivityValue.Number()))
+            case *protos.Value_GuestModeMobileAccessValue:
+                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.GuestModeMobileAccessValue.Number()))
+            case *protos.Value_TrailerAirStatusValue:
+                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.TrailerAirStatusValue.Number()))
+            case *protos.Value_DetailedChargeStateValue:
+                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.DetailedChargeStateValue.Number()))
             default:
-                // Skip non-numeric or unsupported types
+                // Skip unsupported types
                 continue
             }
-
-            // Update the metric
-            vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(numericValue)
         }
     }
 }
