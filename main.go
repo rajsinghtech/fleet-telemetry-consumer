@@ -109,6 +109,7 @@ func main() {
         for _, datum := range vehicleData.Data {
             fieldName := datum.Key.String() // Get the field name from the enum
             value := datum.Value
+
             switch v := value.Value.(type) {
             case *protos.Value_DoubleValue:
                 vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(v.DoubleValue)
@@ -126,6 +127,14 @@ func main() {
                     numericValue = 0.0
                 }
                 vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(numericValue)
+            case *protos.Value_StringValue:
+                // Handle string value by setting a metric label
+                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(0) // Placeholder value
+                // Alternatively, you might consider using a different metric type or logging
+                log.Printf("Received string value for field %s: %s", fieldName, v.StringValue)
+            case *protos.Value_Invalid:
+                // Handle invalid value
+                log.Printf("Received invalid value for field %s", fieldName)
             case *protos.Value_LocationValue:
                 // Handle LocationValue separately
                 vehicleDataGauge.WithLabelValues("Latitude", vehicleData.Vin).Set(v.LocationValue.Latitude)
@@ -134,12 +143,12 @@ func main() {
                 // Handle Doors by setting individual door states
                 doors := v.DoorValue
                 doorFields := map[string]bool{
-                    "DriverFront":    doors.DriverFront,
-                    "PassengerFront": doors.PassengerFront,
-                    "DriverRear":     doors.DriverRear,
-                    "PassengerRear":  doors.PassengerRear,
-                    "TrunkFront":     doors.TrunkFront,
-                    "TrunkRear":      doors.TrunkRear,
+                    "DriverFrontDoor":    doors.DriverFront,
+                    "PassengerFrontDoor": doors.PassengerFront,
+                    "DriverRearDoor":     doors.DriverRear,
+                    "PassengerRearDoor":  doors.PassengerRear,
+                    "TrunkFront":         doors.TrunkFront,
+                    "TrunkRear":          doors.TrunkRear,
                 }
                 for doorName, state := range doorFields {
                     var numericValue float64
@@ -155,6 +164,7 @@ func main() {
                 timeValue := v.TimeValue
                 totalSeconds := float64(timeValue.Hour*3600 + timeValue.Minute*60 + timeValue.Second)
                 vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(totalSeconds)
+            // Handle all enum types
             case *protos.Value_ChargingValue:
                 vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.ChargingValue.Number()))
             case *protos.Value_ShiftStateValue:
@@ -189,18 +199,19 @@ func main() {
                 vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.SeatFoldPositionValue.Number()))
             case *protos.Value_TractorAirStatusValue:
                 vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.TractorAirStatusValue.Number()))
+            case *protos.Value_TrailerAirStatusValue:
+                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.TrailerAirStatusValue.Number()))
             case *protos.Value_FollowDistanceValue:
                 vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.FollowDistanceValue.Number()))
             case *protos.Value_ForwardCollisionSensitivityValue:
                 vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.ForwardCollisionSensitivityValue.Number()))
             case *protos.Value_GuestModeMobileAccessValue:
                 vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.GuestModeMobileAccessValue.Number()))
-            case *protos.Value_TrailerAirStatusValue:
-                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.TrailerAirStatusValue.Number()))
             case *protos.Value_DetailedChargeStateValue:
                 vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.DetailedChargeStateValue.Number()))
             default:
-                // Skip unsupported types
+                // Log unhandled types
+                log.Printf("Unhandled value type for field %s", fieldName)
                 continue
             }
         }
