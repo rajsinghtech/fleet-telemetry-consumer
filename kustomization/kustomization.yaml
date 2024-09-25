@@ -3,7 +3,8 @@ kind: Kustomization
 
 resources:
   - deployment.yaml
-
+  - service.yaml
+  - serviceMonitor.yaml
 configMapGenerator:
   - name: fleet-telemetry-consumer-config
     files:

@@ -97,6 +97,14 @@ func main() {
             continue
         }
 
+        // Output the message to console
+        vehicleDataJSON, err := json.MarshalIndent(vehicleData, "", "  ")
+        if err != nil {
+            log.Printf("Failed to marshal vehicle data to JSON: %v\n", err)
+            continue
+        }
+        fmt.Printf("Received message: %s\n", vehicleDataJSON)
+
         // Process each Datum in the Payload
         for _, datum := range vehicleData.Data {
             fieldName := datum.Key.String() // Get the field name from the enum
@@ -167,8 +175,8 @@ func main() {
                 // Handle LocationValue separately
                 lat := v.LocationValue.Latitude
                 lon := v.LocationValue.Longitude
-                vehicleDataGauge.WithLabelValues(fieldName+"_latitude", vehicleData.Vin).Set(lat)
-                vehicleDataGauge.WithLabelValues(fieldName+"_longitude", vehicleData.Vin).Set(lon)
+                vehicleDataGauge.WithLabelValues("Latitude", vehicleData.Vin).Set(lat)
+                vehicleDataGauge.WithLabelValues("Longitude", vehicleData.Vin).Set(lon)
                 continue // Skip the rest since we've handled this case
             default:
                 // Skip non-numeric or unsupported types

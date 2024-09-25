@@ -1,0 +1,16 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: fleet-telemetry-consumer
+  labels:
+    app: fleet-telemetry-consumer
+spec:
+  selector:
+    matchLabels:
+      app: fleet-telemetry-consumer
+  namespaceSelector:
+    any: true
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s

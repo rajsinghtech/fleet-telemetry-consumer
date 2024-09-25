@@ -14,11 +14,14 @@ spec:
     spec:
       containers:
         - name: fleet-telemetry-consumer
-          image: quay.io/rajsinghcpre/fleet-telemetry-consumer:v0.0.1
+          image: quay.io/rajsinghcpre/fleet-telemetry-consumer:v0.0.2
           command: ["/fleet-telemetry-consumer", "-config", "/etc/fleet-telemetry-consumer/config.json"]
           volumeMounts:
             - name: config-volume
               mountPath: /etc/fleet-telemetry-consumer
+          ports:
+            - containerPort: 2112
+              name: metrics
       volumes:
         - name: config-volume
           configMap:
