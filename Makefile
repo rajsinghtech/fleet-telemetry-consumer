@@ -1,5 +1,5 @@
 build:
-	docker build . --platform linux/amd64 --no-cache
+	docker buildx build --platform linux/amd64 --load -t fleet-telemetry-consumer .
 
 run:
 	docker compose up --build
