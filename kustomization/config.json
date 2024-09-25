@@ -1,5 +1,5 @@
 {
-    "bootstrap.servers": "10.0.100.12:31769",
+    "bootstrap.servers": "tesla-kafka-brokers.kafka.svc.cluster.local:9092",
     "group.id": "fleet-telemetry-consumer-group",
     "auto.offset.reset": "earliest"
 }

@@ -2,8 +2,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: fleet-telemetry-consumer
-  labels:
-    app: fleet-telemetry-consumer
 spec:
   replicas: 1
   selector:
@@ -15,14 +13,13 @@ spec:
         app: fleet-telemetry-consumer
     spec:
       containers:
-      - name: fleet-telemetry-consumer
-        image: quay.io/rajsinghcpre/fleet-telemetry-consumer:v0.0.1
-        args: ["-config", "/etc/fleet-telemetry-consumer/config.json"]
-        volumeMounts:
-        - name: config-volume
-          mountPath: /etc/fleet-telemetry-consumer
-          subPath: config.json
+        - name: fleet-telemetry-consumer
+          image: quay.io/rajsinghcpre/fleet-telemetry-consumer:v0.0.1
+          command: ["/fleet-telemetry-consumer", "-config", "/etc/fleet-telemetry-consumer/config.json"]
+          volumeMounts:
+            - name: config-volume
+              mountPath: /etc/fleet-telemetry-consumer
       volumes:
-      - name: config-volume
-        configMap:
-          name: fleet-telemetry-config
+        - name: config-volume
+          configMap:
+            name: fleet-telemetry-consumer-config

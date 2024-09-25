@@ -1,0 +1,9 @@
+services:
+  fleet-telemetry-consumer:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ./examples/consumer_config.json:/etc/fleet-telemetry-consumer/config.json:ro
+    command: ["/fleet-telemetry-consumer", "-config", "/etc/fleet-telemetry-consumer/config.json"]

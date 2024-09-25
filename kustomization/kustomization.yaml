@@ -5,6 +5,8 @@ resources:
   - deployment.yaml
 
 configMapGenerator:
-  - name: fleet-telemetry-config
+  - name: fleet-telemetry-consumer-config
     files:
-      - consumer_config.json
+      - config.json
+    options:
+      disableNameSuffixHash: true 
