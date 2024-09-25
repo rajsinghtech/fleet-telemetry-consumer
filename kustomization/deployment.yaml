@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fleet-telemetry-consumer
+  labels:
+    app: fleet-telemetry-consumer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fleet-telemetry-consumer
+  template:
+    metadata:
+      labels:
+        app: fleet-telemetry-consumer
+    spec:
+      containers:
+      - name: fleet-telemetry-consumer
+        image: quay.io/rajsinghcpre/fleet-telemetry-consumer:v0.0.1
+        args: ["-config", "/etc/fleet-telemetry-consumer/config.json"]
+        volumeMounts:
+        - name: config-volume
+          mountPath: /etc/fleet-telemetry-consumer
+          subPath: config.json
+      volumes:
+      - name: config-volume
+        configMap:
+          name: fleet-telemetry-config

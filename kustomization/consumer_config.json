@@ -1,0 +1,5 @@
+{
+    "bootstrap.servers": "10.0.100.12:31769",
+    "group.id": "fleet-telemetry-consumer-group",
+    "auto.offset.reset": "earliest"
+}

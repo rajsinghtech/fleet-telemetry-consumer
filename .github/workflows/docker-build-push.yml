@@ -31,11 +31,11 @@ jobs:
           fi
 
       - name: Build Docker Image
-        run: make build
+        run: docker build . -t fleet-telemetry-consumer:${{ env.image_tag }}  
 
       - name: Tag Docker Image (only if pushing)
         if: startsWith(github.ref, 'refs/tags/')
-        run: docker tag fleet-telemetry-consumer quay.io/rajsinghcpre/fleet-telemetry-consumer:${{ env.image_tag }}
+        run: docker tag fleet-telemetry-consumer:${{ env.image_tag }} quay.io/rajsinghcpre/fleet-telemetry-consumer:${{ env.image_tag }}
 
       - name: Push Docker Image (only if pushing)
         if: startsWith(github.ref, 'refs/tags/')
