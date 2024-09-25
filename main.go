@@ -2,22 +2,36 @@ package main
 
 import (
     "encoding/json"
+    "flag"
     "fmt"
+    "os"
     "log"
-
     "github.com/confluentinc/confluent-kafka-go/kafka"
     "google.golang.org/protobuf/proto"
-
-    // Import your generated protobuf package here
     "github.com/teslamotors/fleet-telemetry/protos"
 )
 
 func main() {
-    // Set up the Kafka consumer configuration
-    config := kafka.ConfigMap{
-        "bootstrap.servers": "10.0.100.12:31769", // Replace with your broker address
-        "group.id":          "fleet-telemetry-consumer-group",
-        "auto.offset.reset": "earliest",
+    // Define a command-line flag for the configuration file path
+    configFilePath := flag.String("config", "config.json", "Path to the JSON configuration file")
+    flag.Parse()
+
+    // Read the configuration file
+    configFile, err := os.ReadFile(*configFilePath)
+    if err != nil {
+        log.Fatalf("Failed to read configuration file: %s", err)
+    }
+
+    // Parse the JSON configuration file
+    var configMap map[string]interface{}
+    if err := json.Unmarshal(configFile, &configMap); err != nil {
+        log.Fatalf("Failed to parse configuration file: %s", err)
+    }
+
+    // Convert the map to kafka.ConfigMap
+    config := kafka.ConfigMap{}
+    for key, value := range configMap {
+        config[key] = value
     }
 
     // Create the consumer
