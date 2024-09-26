@@ -1,7 +1,3 @@
-Here’s an updated README to include details about Tesla's Fleet Telemetry project and the Protobuf definition:
-
----
-
 # Fleet Telemetry Consumer
 
 This application consumes vehicle telemetry data from Tesla's [Fleet Telemetry project](https://github.com/teslamotors/fleet-telemetry), processes it using Protobuf, and exports metrics to Prometheus. It is intended to be deployed in a Kubernetes environment and can be monitored using Prometheus.
