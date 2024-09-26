@@ -13,6 +13,7 @@ import (
     "github.com/prometheus/client_golang/prometheus"
     "github.com/prometheus/client_golang/prometheus/promhttp"
     "github.com/teslamotors/fleet-telemetry/protos"
+    "google.golang.org/protobuf/encoding/protojson"
     "google.golang.org/protobuf/proto"
 )
 
@@ -99,13 +100,19 @@ func main() {
             continue
         }
 
-        // Print the VIN
-        fmt.Printf("VIN: %s\n", vehicleData.Vin)
+        // Marshal vehicleData to JSON
+        vehicleDataJSON, err := protojson.Marshal(vehicleData)
+        if err != nil {
+            log.Printf("Failed to marshal vehicleData to JSON: %v\n", err)
+            continue
+        }
+        fmt.Println(string(vehicleDataJSON))
+
         // Process each Datum in the Payload
         for _, datum := range vehicleData.Data {
             fieldName := datum.Key.String() // Get the field name from the enum
             value := datum.Value
-            fmt.Printf("Field Name: %s, Value: %v\n", fieldName, value)
+            // Process each value type
             switch v := value.Value.(type) {
             case *protos.Value_DoubleValue:
                 vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(v.DoubleValue)
@@ -134,7 +141,6 @@ func main() {
                     log.Printf("Received non-numeric string value for field %s: %s", fieldName, v.StringValue)
                 }
             case *protos.Value_Invalid:
-                // Handle invalid value
                 log.Printf("Received invalid value for field %s", fieldName)
             case *protos.Value_LocationValue:
                 // Handle LocationValue separately
