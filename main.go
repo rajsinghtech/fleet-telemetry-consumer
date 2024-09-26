@@ -5,6 +5,7 @@ import (
     "flag"
     "fmt"
     "log"
+    "math"
     "net/http"
     "os"
     "strconv"
@@ -112,122 +113,94 @@ func main() {
         for _, datum := range vehicleData.Data {
             fieldName := datum.Key.String() // Get the field name from the enum
             value := datum.Value
-            // Process each value type
-            switch v := value.Value.(type) {
-            case *protos.Value_DoubleValue:
-                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(v.DoubleValue)
-            case *protos.Value_FloatValue:
-                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.FloatValue))
-            case *protos.Value_IntValue:
-                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.IntValue))
-            case *protos.Value_LongValue:
-                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.LongValue))
-            case *protos.Value_BooleanValue:
-                var numericValue float64
-                if v.BooleanValue {
-                    numericValue = 1.0
-                } else {
-                    numericValue = 0.0
-                }
-                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(numericValue)
-            case *protos.Value_StringValue:
-                // Check if the string is "<invalid>"
-                if v.StringValue == "\u003cinvalid\u003e" || v.StringValue == "<invalid>" {
-                    vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(0)
-                    log.Printf("Received invalid string value for field %s", fieldName)
-                } else {
-                    // Try to parse the string value as a float64
-                    floatVal, err := strconv.ParseFloat(v.StringValue, 64)
-                    if err == nil {
-                        vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(floatVal)
-                    } else {
-                        // Handle non-numeric string values
-                        vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(0) // Placeholder value
-                        log.Printf("Received non-numeric string value for field %s: %s", fieldName, v.StringValue)
-                    }
-                }
-            case *protos.Value_Invalid:
-                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(0)
-                log.Printf("Received invalid value for field %s", fieldName)
-            case *protos.Value_LocationValue:
-                // Handle LocationValue separately
-                vehicleDataGauge.WithLabelValues("Latitude", vehicleData.Vin).Set(v.LocationValue.Latitude)
-                vehicleDataGauge.WithLabelValues("Longitude", vehicleData.Vin).Set(v.LocationValue.Longitude)
-            case *protos.Value_DoorValue:
-                // Handle Doors by setting individual door states
-                doors := v.DoorValue
-                doorFields := map[string]bool{
-                    "DriverFrontDoor":    doors.DriverFront,
-                    "PassengerFrontDoor": doors.PassengerFront,
-                    "DriverRearDoor":     doors.DriverRear,
-                    "PassengerRearDoor":  doors.PassengerRear,
-                    "TrunkFront":         doors.TrunkFront,
-                    "TrunkRear":          doors.TrunkRear,
-                }
-                for doorName, state := range doorFields {
-                    var numericValue float64
-                    if state {
-                        numericValue = 1.0
-                    } else {
-                        numericValue = 0.0
-                    }
-                    vehicleDataGauge.WithLabelValues(doorName, vehicleData.Vin).Set(numericValue)
-                }
-            case *protos.Value_TimeValue:
-                // Handle TimeValue by converting to seconds since midnight
-                timeValue := v.TimeValue
-                totalSeconds := float64(timeValue.Hour*3600 + timeValue.Minute*60 + timeValue.Second)
-                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(totalSeconds)
-            // Handle all enum types
-            case *protos.Value_ChargingValue:
-                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.ChargingValue.Number()))
-            case *protos.Value_ShiftStateValue:
-                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.ShiftStateValue.Number()))
-            case *protos.Value_LaneAssistLevelValue:
-                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.LaneAssistLevelValue.Number()))
-            case *protos.Value_ScheduledChargingModeValue:
-                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.ScheduledChargingModeValue.Number()))
-            case *protos.Value_SentryModeStateValue:
-                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.SentryModeStateValue.Number()))
-            case *protos.Value_SpeedAssistLevelValue:
-                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.SpeedAssistLevelValue.Number()))
-            case *protos.Value_BmsStateValue:
-                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.BmsStateValue.Number()))
-            case *protos.Value_BuckleStatusValue:
-                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.BuckleStatusValue.Number()))
-            case *protos.Value_CarTypeValue:
-                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.CarTypeValue.Number()))
-            case *protos.Value_ChargePortValue:
-                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.ChargePortValue.Number()))
-            case *protos.Value_ChargePortLatchValue:
-                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.ChargePortLatchValue.Number()))
-            case *protos.Value_CruiseStateValue:
-                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.CruiseStateValue.Number()))
-            case *protos.Value_DriveInverterStateValue:
-                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.DriveInverterStateValue.Number()))
-            case *protos.Value_HvilStatusValue:
-                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.HvilStatusValue.Number()))
-            case *protos.Value_WindowStateValue:
-                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.WindowStateValue.Number()))
-            case *protos.Value_SeatFoldPositionValue:
-                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.SeatFoldPositionValue.Number()))
-            case *protos.Value_TractorAirStatusValue:
-                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.TractorAirStatusValue.Number()))
-            case *protos.Value_TrailerAirStatusValue:
-                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.TrailerAirStatusValue.Number()))
-            case *protos.Value_FollowDistanceValue:
-                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.FollowDistanceValue.Number()))
-            case *protos.Value_ForwardCollisionSensitivityValue:
-                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.ForwardCollisionSensitivityValue.Number()))
-            case *protos.Value_GuestModeMobileAccessValue:
-                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.GuestModeMobileAccessValue.Number()))
-            case *protos.Value_DetailedChargeStateValue:
-                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(float64(v.DetailedChargeStateValue.Number()))
-            default:
-                // Log unhandled types
-                log.Printf("Unhandled value type for field %s", fieldName)
-                continue
-            }
+            processValue(fieldName, value, vehicleDataGauge, vehicleData.Vin)
         }
     }
+}
+
+func processValue(fieldName string, value *protos.Value, vehicleDataGauge *prometheus.GaugeVec, vin string) {
+    // Process each value type
+    switch v := value.Value.(type) {
+    case *protos.Value_DoubleValue:
+        vehicleDataGauge.WithLabelValues(fieldName, vin).Set(v.DoubleValue)
+    case *protos.Value_FloatValue:
+        vehicleDataGauge.WithLabelValues(fieldName, vin).Set(float64(v.FloatValue))
+    case *protos.Value_IntValue:
+        vehicleDataGauge.WithLabelValues(fieldName, vin).Set(float64(v.IntValue))
+    case *protos.Value_LongValue:
+        vehicleDataGauge.WithLabelValues(fieldName, vin).Set(float64(v.LongValue))
+    case *protos.Value_BooleanValue:
+        handleBooleanValue(v.BooleanValue, fieldName, vehicleDataGauge, vin)
+    case *protos.Value_StringValue:
+        handleStringValue(v.StringValue, fieldName, vehicleDataGauge, vin)
+    case *protos.Value_Invalid:
+        log.Printf("Invalid value received for field %s, setting as NaN", fieldName)
+        vehicleDataGauge.WithLabelValues(fieldName, vin).Set(math.NaN())
+    case *protos.Value_LocationValue:
+        handleLocationValue(v.LocationValue, fieldName, vehicleDataGauge, vin)
+    case *protos.Value_DoorValue:
+        handleDoorValues(v.DoorValue, vehicleDataGauge, vin)
+    case *protos.Value_TimeValue:
+        handleTimeValue(v.TimeValue, fieldName, vehicleDataGauge, vin)
+    default:
+        log.Printf("Unhandled value type for field %s", fieldName)
+    }
+}
+
+func handleBooleanValue(booleanValue bool, fieldName string, vehicleDataGauge *prometheus.GaugeVec, vin string) {
+    var numericValue float64
+    if booleanValue {
+        numericValue = 1.0
+    } else {
+        numericValue = 0.0
+    }
+    vehicleDataGauge.WithLabelValues(fieldName, vin).Set(numericValue)
+}
+
+func handleStringValue(stringValue, fieldName string, vehicleDataGauge *prometheus.GaugeVec, vin string) {
+    // Handle invalid string values more gracefully
+    if stringValue == "<invalid>" || stringValue == "\u003cinvalid\u003e" {
+        log.Printf("Invalid string value received for field %s, setting as NaN", fieldName)
+        vehicleDataGauge.WithLabelValues(fieldName, vin).Set(math.NaN())
+        return
+    }
+
+    // Try to parse the string value as a float64
+    floatVal, err := strconv.ParseFloat(stringValue, 64)
+    if err == nil {
+        vehicleDataGauge.WithLabelValues(fieldName, vin).Set(floatVal)
+    } else {
+        log.Printf("Non-numeric string value received for field %s: %s, setting as NaN", fieldName, stringValue)
+        vehicleDataGauge.WithLabelValues(fieldName, vin).Set(math.NaN())
+    }
+}
+
+func handleLocationValue(locationValue *protos.LocationValue, fieldName string, vehicleDataGauge *prometheus.GaugeVec, vin string) {
+    vehicleDataGauge.WithLabelValues("Latitude", vin).Set(locationValue.Latitude)
+    vehicleDataGauge.WithLabelValues("Longitude", vin).Set(locationValue.Longitude)
+}
+
+func handleDoorValues(doors *protos.Doors, vehicleDataGauge *prometheus.GaugeVec, vin string) {
+    doorFields := map[string]bool{
+        "DriverFrontDoor":    doors.DriverFront,
+        "PassengerFrontDoor": doors.PassengerFront,
+        "DriverRearDoor":     doors.DriverRear,
+        "PassengerRearDoor":  doors.PassengerRear,
+        "TrunkFront":         doors.TrunkFront,
+        "TrunkRear":          doors.TrunkRear,
+    }
+    for doorName, state := range doorFields {
+        var numericValue float64
+        if state {
+            numericValue = 1.0
+        } else {
+            numericValue = 0.0
+        }
+        vehicleDataGauge.WithLabelValues(doorName, vin).Set(numericValue)
+    }
+}
+
+func handleTimeValue(timeValue *protos.Time, fieldName string, vehicleDataGauge *prometheus.GaugeVec, vin string) {
+    totalSeconds := float64(timeValue.Hour*3600 + timeValue.Minute*60 + timeValue.Second)
+    vehicleDataGauge.WithLabelValues(fieldName, vin).Set(totalSeconds)
 }

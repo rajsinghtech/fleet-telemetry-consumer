@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: fleet-telemetry-consumer
-          image: quay.io/rajsinghcpre/fleet-telemetry-consumer:v0.0.5
+          image: quay.io/rajsinghcpre/fleet-telemetry-consumer:v0.0.8
           command: ["/fleet-telemetry-consumer", "-config", "/etc/fleet-telemetry-consumer/config.json"]
           volumeMounts:
             - name: config-volume
