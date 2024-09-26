@@ -4,13 +4,15 @@ import (
     "encoding/json"
     "flag"
     "fmt"
-    "os"
     "log"
     "net/http"
+    "os"
+    "strconv"
+
     "github.com/confluentinc/confluent-kafka-go/kafka"
-    "github.com/teslamotors/fleet-telemetry/protos"
     "github.com/prometheus/client_golang/prometheus"
     "github.com/prometheus/client_golang/prometheus/promhttp"
+    "github.com/teslamotors/fleet-telemetry/protos"
     "google.golang.org/protobuf/proto"
 )
 
@@ -97,19 +99,13 @@ func main() {
             continue
         }
 
-        // Output the message to console
-        vehicleDataJSON, err := json.MarshalIndent(vehicleData, "", "  ")
-        if err != nil {
-            log.Printf("Failed to marshal vehicle data to JSON: %v\n", err)
-            continue
-        }
-        fmt.Printf("Received message: %s\n", vehicleDataJSON)
-
+        // Print the VIN
+        fmt.Printf("VIN: %s\n", vehicleData.Vin)
         // Process each Datum in the Payload
         for _, datum := range vehicleData.Data {
             fieldName := datum.Key.String() // Get the field name from the enum
             value := datum.Value
-
+            fmt.Printf("Field Name: %s, Value: %v\n", fieldName, value)
             switch v := value.Value.(type) {
             case *protos.Value_DoubleValue:
                 vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(v.DoubleValue)
@@ -128,10 +124,15 @@ func main() {
                 }
                 vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(numericValue)
             case *protos.Value_StringValue:
-                // Handle string value by setting a metric label
-                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(0) // Placeholder value
-                // Alternatively, you might consider using a different metric type or logging
-                log.Printf("Received string value for field %s: %s", fieldName, v.StringValue)
+                // Try to parse the string value as a float64
+                floatVal, err := strconv.ParseFloat(v.StringValue, 64)
+                if err == nil {
+                    vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(floatVal)
+                } else {
+                    // Handle non-numeric string values
+                    vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(0) // Placeholder value
+                    log.Printf("Received non-numeric string value for field %s: %s", fieldName, v.StringValue)
+                }
             case *protos.Value_Invalid:
                 // Handle invalid value
                 log.Printf("Received invalid value for field %s", fieldName)
