@@ -131,16 +131,23 @@ func main() {
                 }
                 vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(numericValue)
             case *protos.Value_StringValue:
-                // Try to parse the string value as a float64
-                floatVal, err := strconv.ParseFloat(v.StringValue, 64)
-                if err == nil {
-                    vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(floatVal)
+                // Check if the string is "<invalid>"
+                if v.StringValue == "\u003cinvalid\u003e" || v.StringValue == "<invalid>" {
+                    vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(0)
+                    log.Printf("Received invalid string value for field %s", fieldName)
                 } else {
-                    // Handle non-numeric string values
-                    vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(0) // Placeholder value
-                    log.Printf("Received non-numeric string value for field %s: %s", fieldName, v.StringValue)
+                    // Try to parse the string value as a float64
+                    floatVal, err := strconv.ParseFloat(v.StringValue, 64)
+                    if err == nil {
+                        vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(floatVal)
+                    } else {
+                        // Handle non-numeric string values
+                        vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(0) // Placeholder value
+                        log.Printf("Received non-numeric string value for field %s: %s", fieldName, v.StringValue)
+                    }
                 }
             case *protos.Value_Invalid:
+                vehicleDataGauge.WithLabelValues(fieldName, vehicleData.Vin).Set(0)
                 log.Printf("Received invalid value for field %s", fieldName)
             case *protos.Value_LocationValue:
                 // Handle LocationValue separately
