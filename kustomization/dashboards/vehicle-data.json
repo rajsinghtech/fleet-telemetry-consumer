@@ -22,6 +22,7 @@
     "panels": [
       {
         "datasource": {
+          "default": true,
           "type": "prometheus",
           "uid": "prometheus"
         },
@@ -60,6 +61,11 @@
         },
         "id": 1,
         "options": {
+          "basemap": {
+            "config": {},
+            "name": "Layer 0",
+            "type": "osm-standard"
+          },
           "center": {
             "latitude": 41.776876,
             "longitude": -88.245579
@@ -72,7 +78,7 @@
             "showAttribution": true,
             "showDebug": false,
             "showMeasure": false,
-            "showScale": false,
+            "showScale": true,
             "showZoom": true
           },
           "layers": [
@@ -83,7 +89,7 @@
                   "color": {
                     "fixed": "dark-green"
                   },
-                  "opacity": 0.4,
+                  "opacity": 1,
                   "rotation": {
                     "fixed": 0,
                     "max": 360,
@@ -96,12 +102,16 @@
                     "min": 2
                   },
                   "symbol": {
-                    "fixed": "img/icons/marker/circle.svg",
+                    "fixed": "img/icons/marker/star.svg",
                     "mode": "fixed"
                   },
                   "symbolAlign": {
                     "horizontal": "center",
                     "vertical": "center"
+                  },
+                  "text": {
+                    "fixed": "",
+                    "mode": "fixed"
                   },
                   "textConfig": {
                     "fontSize": 12,
@@ -113,9 +123,11 @@
                 }
               },
               "location": {
-                "mode": "auto"
+                "latitude": "7SAYGDEEXRA288618 Latitude",
+                "longitude": "7SAYGDEEXRA288618 Longitude",
+                "mode": "coords"
               },
-              "name": "Layer 1",
+              "name": "Cars",
               "tooltip": true,
               "type": "markers"
             }
@@ -127,11 +139,11 @@
           },
           "view": {
             "allLayers": true,
-            "id": "zero",
-            "lat": 0,
-            "lon": 0,
+            "id": "fit",
+            "lat": 41.776906,
+            "lon": -88.24551,
             "mode": "markers",
-            "zoom": 1
+            "zoom": 15
           },
           "zoom": 4
         },
@@ -142,8 +154,12 @@
               "type": "prometheus",
               "uid": "prometheus"
             },
+            "editorMode": "code",
             "expr": "avg(vehicle_data{field=\"Latitude\"}) by (vin)",
+            "format": "time_series",
+            "interval": "",
             "legendFormat": "{{vin}} Latitude",
+            "range": true,
             "refId": "A"
           },
           {
@@ -151,12 +167,20 @@
               "type": "prometheus",
               "uid": "prometheus"
             },
+            "editorMode": "code",
             "expr": "avg(vehicle_data{field=\"Longitude\"}) by (vin)",
             "legendFormat": "{{vin}} Longitude",
+            "range": true,
             "refId": "B"
           }
         ],
         "title": "Vehicle Locations",
+        "transformations": [
+          {
+            "id": "joinByField",
+            "options": {}
+          }
+        ],
         "type": "geomap"
       },
       {
@@ -273,7 +297,7 @@
               "axisPlacement": "hidden",
               "barAlignment": 0,
               "barWidthFactor": 0.6,
-              "drawStyle": "points",
+              "drawStyle": "line",
               "fillOpacity": 0,
               "gradientMode": "none",
               "hideFrom": {
@@ -298,6 +322,7 @@
                 "mode": "off"
               }
             },
+            "decimals": 3,
             "mappings": [],
             "thresholds": {
               "mode": "absolute",
@@ -351,6 +376,7 @@
       },
       {
         "datasource": {
+          "default": true,
           "type": "prometheus",
           "uid": "prometheus"
         },
@@ -367,7 +393,7 @@
               "axisPlacement": "hidden",
               "barAlignment": 0,
               "barWidthFactor": 0.6,
-              "drawStyle": "points",
+              "drawStyle": "line",
               "fillOpacity": 0,
               "gradientMode": "none",
               "hideFrom": {
@@ -376,8 +402,8 @@
                 "viz": false
               },
               "insertNulls": false,
-              "lineInterpolation": "linear",
-              "lineWidth": 1,
+              "lineInterpolation": "smooth",
+              "lineWidth": 3,
               "pointSize": 5,
               "scaleDistribution": {
                 "type": "linear"
@@ -406,7 +432,7 @@
                 }
               ]
             },
-            "unit": "celsius"
+            "unit": "fahrenheit"
           },
           "overrides": []
         },
@@ -435,8 +461,10 @@
               "type": "prometheus",
               "uid": "prometheus"
             },
-            "expr": "avg(vehicle_data{field=\"InsideTemp\"}) by (vin)",
+            "editorMode": "code",
+            "expr": "((avg(vehicle_data{field=\"InsideTemp\"}) by (vin)) * 9 / 5) + 32",
             "legendFormat": "{{vin}} Inside Temp",
+            "range": true,
             "refId": "A"
           },
           {
@@ -444,8 +472,10 @@
               "type": "prometheus",
               "uid": "prometheus"
             },
-            "expr": "avg(vehicle_data{field=\"OutsideTemp\"}) by (vin)",
+            "editorMode": "code",
+            "expr": "((avg(vehicle_data{field=\"OutsideTemp\"}) by (vin)) * 9 / 5) + 32",
             "legendFormat": "{{vin}} Outside Temp",
+            "range": true,
             "refId": "B"
           }
         ],
@@ -836,13 +866,13 @@
       "list": []
     },
     "time": {
-      "from": "now-24h",
+      "from": "now-3h",
       "to": "now"
     },
     "timepicker": {},
     "timezone": "",
     "title": "Vehicle Data",
     "uid": "cdz1a9i11r3lsf",
-    "version": 9,
+    "version": 10,
     "weekStart": ""
   }
