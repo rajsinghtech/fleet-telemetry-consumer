@@ -5,6 +5,7 @@ resources:
   - deployment.yaml
   - service.yaml
   - serviceMonitor.yaml
+  - dashboards/
 configMapGenerator:
   - name: fleet-telemetry-consumer-config
     files:

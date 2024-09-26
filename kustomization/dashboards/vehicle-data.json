@@ -1,0 +1,148 @@
+{
+    "title": "Vehicle Data",
+    "panels": [
+      {
+        "type": "geomap",
+        "title": "Vehicle Locations",
+        "targets": [
+          {
+            "expr": "avg(vehicle_data{field=\"Latitude\"}) by (vin)",
+            "legendFormat": "{{vin}} Latitude"
+          },
+          {
+            "expr": "avg(vehicle_data{field=\"Longitude\"}) by (vin)",
+            "legendFormat": "{{vin}} Longitude"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "none"
+          }
+        },
+        "options": {
+          "center": {"latitude": 41.776876, "longitude": -88.245579},
+          "zoom": 4,
+          "colorScale": "temperature",
+          "circleMinSize": 2,
+          "circleMaxSize": 30,
+          "tooltip": {"show": true},
+          "tooltipContent": "{{vin}} - Latitude: {{latitude}}, Longitude: {{longitude}}",
+          "view": {"mode": "markers"}
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 0
+        }
+      },
+      {
+        "type": "stat",
+        "title": "Registered VINs",
+        "targets": [
+          {
+            "expr": "group by (vin) (count(vehicle_data))",
+            "legendFormat": "{{vin}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "none",
+            "displayName": "VINs",
+            "noValue": "No VIN data"
+          },
+          "overrides": []
+        },
+        "options": {
+          "orientation": "vertical",
+          "reduceOptions": {
+            "calculation": "lastNotNull"
+          },
+          "text": {
+            "valueSize": 12
+          },
+          "colorMode": "none"
+        },
+        "gridPos": {
+          "h": 6,
+          "w": 12,
+          "x": 0,
+          "y": 8
+        }
+      },
+      {
+        "type": "graph",
+        "title": "Temperature Readings (Inside & Outside)",
+        "targets": [
+          {
+            "expr": "avg(vehicle_data{field=\"InsideTemp\"}) by (vin)",
+            "legendFormat": "{{vin}} Inside Temp"
+          },
+          {
+            "expr": "avg(vehicle_data{field=\"OutsideTemp\"}) by (vin)",
+            "legendFormat": "{{vin}} Outside Temp"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 14
+        },
+        "yaxes": [
+          {
+            "label": "Temperature (°C)",
+            "format": "celsius"
+          }
+        ]
+      },
+      {
+        "type": "graph",
+        "title": "Battery Level",
+        "targets": [
+          {
+            "expr": "avg(vehicle_data{field=\"BatteryLevel\"}) by (vin)",
+            "legendFormat": "{{vin}} Battery Level"
+          }
+        ],
+        "gridPos": {
+          "h": 6,
+          "w": 12,
+          "x": 0,
+          "y": 22
+        },
+        "yaxes": [
+          {
+            "label": "Battery Level (%)",
+            "format": "percent"
+          }
+        ]
+      },
+      {
+        "type": "graph",
+        "title": "Odometer",
+        "targets": [
+          {
+            "expr": "avg(vehicle_data{field=\"Odometer\"}) by (vin)",
+            "legendFormat": "{{vin}} Odometer"
+          }
+        ],
+        "gridPos": {
+          "h": 6,
+          "w": 12,
+          "x": 0,
+          "y": 28
+        },
+        "yaxes": [
+          {
+            "label": "Distance (km)",
+            "format": "short"
+          }
+        ]
+      }
+    ],
+    "time": {
+      "from": "now-6h",
+      "to": "now"
+    }
+  }
