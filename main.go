@@ -1,6 +1,8 @@
 package main
 
 import (
+    "bytes"
+    "context"
     "encoding/json"
     "flag"
     "fmt"
@@ -8,8 +10,13 @@ import (
     "math"
     "net/http"
     "os"
-    "strconv"
 
+    "strconv"
+    "time"
+
+    "github.com/aws/aws-sdk-go-v2/aws"
+    "github.com/aws/aws-sdk-go-v2/config"
+    "github.com/aws/aws-sdk-go-v2/service/s3"
     "github.com/confluentinc/confluent-kafka-go/kafka"
     "github.com/prometheus/client_golang/prometheus"
     "github.com/prometheus/client_golang/prometheus/promhttp"
@@ -17,6 +24,11 @@ import (
     "google.golang.org/protobuf/encoding/protojson"
     "google.golang.org/protobuf/proto"
 )
+
+// Define an S3 client and config
+var s3Client *s3.Client
+var s3Enabled bool
+var s3Bucket string
 
 func main() {
     // Define a command-line flag for the configuration file path
@@ -30,19 +42,40 @@ func main() {
     }
 
     // Parse the JSON configuration file
-    var configMap map[string]interface{}
-    if err := json.Unmarshal(configFile, &configMap); err != nil {
+    var configData map[string]interface{}
+    if err := json.Unmarshal(configFile, &configData); err != nil {
         log.Fatalf("Failed to parse configuration file: %s", err)
     }
 
-    // Convert the map to kafka.ConfigMap
-    config := kafka.ConfigMap{}
-    for key, value := range configMap {
-        config[key] = value
+    // Load Kafka configuration
+    kafkaConfig, ok := configData["kafka"].(map[string]interface{})
+    if !ok {
+        log.Fatalf("Kafka configuration missing or incorrect format")
     }
 
-    // Create the consumer
-    consumer, err := kafka.NewConsumer(&config)
+    // Convert the map to kafka.ConfigMap
+    kafkaCfgMap := kafka.ConfigMap{}
+    for key, value := range kafkaConfig {
+        kafkaCfgMap[key] = value
+    }
+
+    // Check for AWS configuration
+    awsConfig, awsOk := configData["aws"].(map[string]interface{})
+    if awsOk {
+        if bucket, exists := awsConfig["s3Bucket"].(string); exists && bucket != "" {
+            s3Bucket = bucket
+            initS3Client() // Initialize AWS S3 client if config exists
+        } else {
+            log.Println("S3 bucket is not configured correctly. S3 uploads will be disabled.")
+            s3Enabled = false
+        }
+    } else {
+        log.Println("AWS configuration missing. S3 uploads are not enabled.")
+        s3Enabled = false
+    }
+
+    // Create the Kafka consumer
+    consumer, err := kafka.NewConsumer(&kafkaCfgMap)
     if err != nil {
         log.Fatalf("Failed to create consumer: %s", err)
     }
@@ -89,7 +122,6 @@ func main() {
     for {
         msg, err := consumer.ReadMessage(-1)
         if err != nil {
-            // Handle errors
             log.Printf("Error while consuming: %v\n", err)
             continue
         }
@@ -109,6 +141,14 @@ func main() {
         }
         fmt.Println(string(vehicleDataJSON))
 
+        // If S3 is enabled, upload to S3
+        if s3Enabled {
+            err = uploadToS3(vehicleData.Vin, vehicleDataJSON)
+            if err != nil {
+                log.Printf("Failed to upload data to S3: %v\n", err)
+            }
+        }
+
         // Process each Datum in the Payload
         for _, datum := range vehicleData.Data {
             fieldName := datum.Key.String() // Get the field name from the enum
@@ -116,6 +156,37 @@ func main() {
             processValue(fieldName, value, vehicleDataGauge, vehicleData.Vin)
         }
     }
+}
+
+// initS3Client initializes the S3 client with AWS SDK
+func initS3Client() {
+    cfg, err := config.LoadDefaultConfig(context.TODO())
+    if err != nil {
+        log.Fatalf("Unable to load AWS SDK config: %v", err)
+    }
+    s3Client = s3.NewFromConfig(cfg)
+    s3Enabled = true
+    log.Println("S3 uploads are enabled.")
+}
+
+// uploadToS3 uploads vehicle data to the specified S3 bucket
+func uploadToS3(vin string, data []byte) error {
+    key := fmt.Sprintf("vehicle-data/%s/%s.json", vin, time.Now().Format("2006-01-02T15-04-05"))
+
+    input := &s3.PutObjectInput{
+        Bucket: aws.String(s3Bucket),
+        Key:    aws.String(key),
+        Body:   bytes.NewReader(data),
+        ContentType: aws.String("application/json"),
+    }
+
+    _, err := s3Client.PutObject(context.TODO(), input)
+    if err != nil {
+        return fmt.Errorf("unable to upload data to S3: %w", err)
+    }
+
+    log.Printf("Successfully uploaded data to S3: s3://%s/%s", s3Bucket, key)
+    return nil
 }
 
 func processValue(fieldName string, value *protos.Value, vehicleDataGauge *prometheus.GaugeVec, vin string) {

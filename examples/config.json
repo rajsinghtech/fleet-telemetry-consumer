@@ -1,5 +1,14 @@
 {
-    "bootstrap.servers": "10.0.100.12:31769",
-    "group.id": "fleet-telemetry-consumer-group",
-    "auto.offset.reset": "earliest"
+    "kafka": {
+        "bootstrap.servers": "10.0.100.12:31769",
+        "group.id": "fleet-telemetry-consumer-group",
+        "auto.offset.reset": "earliest"
+    },
+    "aws": {
+        "s3Bucket": "ceph-bkt-tesla",
+        "endpoint": "http://localhost:9000",  
+        "accessKey": "NT3HV94UFA7M724PL5RM",
+        "secretKey": "pskWHqYLK6Jpcjz0NSCrrfZqPlnLxzAB5HdK1Mpt",
+        "useSSL": false 
+    }
 }
