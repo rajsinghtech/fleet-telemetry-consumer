@@ -9,7 +9,7 @@ import (
 	"math"
 	"net/http"
 	"os"
-	"path/filepath"
+
 	"strconv"
 	"time"
 
@@ -179,22 +179,36 @@ func loadConfig(path string) (Config, error) {
 
 // uploadToS3 uploads data to the specified S3 bucket with a timestamped key
 func uploadToS3(s3Svc *s3.S3, bucket string, data []byte) error {
-	timestamp := time.Now().Format("2006/01/02/15-04-05.000")
-	key := filepath.Join(timestamp, "data.json")
+    // Generate current time in UTC with microsecond precision
+    now := time.Now().UTC()
+    timestamp := now.Format("20060102T150405.000000Z") // Format: YYYYMMDDTHHMMSS.microsecondsZ
 
-	input := &s3.PutObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(key),
-		Body:   bytes.NewReader(data),
-	}
+    // Define key structure based on the timestamp
+    // Example: 2024/04/27/15/30/45/20240427T153045.123456Z.json
+    key := fmt.Sprintf("%04d/%02d/%02d/%s.json",
+        now.Year(),
+        now.Month(),
+        now.Day(),
+        timestamp,
+    )
 
-	_, err := s3Svc.PutObject(input)
-	if err != nil {
-		return fmt.Errorf("failed to upload to S3 at key '%s': %w", key, err)
-	}
+    // Prepare the S3 PutObject input
+    input := &s3.PutObjectInput{
+        Bucket: aws.String(bucket),
+        Key:    aws.String(key),
+        Body:   bytes.NewReader(data),
+        // Optionally, set ContentType and other metadata
+        ContentType: aws.String("application/json"),
+    }
 
-	log.Printf("Successfully uploaded data to S3 at key: %s", key)
-	return nil
+    // Upload the object to S3
+    _, err := s3Svc.PutObject(input)
+    if err != nil {
+        return fmt.Errorf("failed to upload to S3 at key '%s': %w", key, err)
+    }
+
+    log.Printf("Successfully uploaded data to S3 at key: %s", key)
+    return nil
 }
 
 // processValue handles different types of protobuf values and updates Prometheus metrics
