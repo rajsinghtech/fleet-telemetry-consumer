@@ -1,15 +1,15 @@
 {
     "kafka": {
-        "bootstrap.servers": "10.0.100.12:31769",
+        "bootstrap.servers": "tesla-kafka-bootstrap.kafka:9092",
         "group.id": "fleet-telemetry-consumer-group",
         "auto.offset.reset": "earliest",
         "topic": "tesla_V"
     },
     "aws": {
         "bucket": "ceph-bkt-tesla",
-        "endpoint": "http://localhost:9000",  
+        "endpoint": "http://rook-ceph-rgw-my-store.rook-ceph:80",  
         "accessKey": "NT3HV94UFA7M724PL5RM",
         "secretKey": "pskWHqYLK6Jpcjz0NSCrrfZqPlnLxzAB5HdK1Mpt",
-        "region": "us-west-1"
+        "region": "us-west-1" 
     }
 }
