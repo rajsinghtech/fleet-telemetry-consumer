@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -10,10 +9,8 @@ import (
 	"math"
 	"net/http"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"strconv"
-	"syscall"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -53,9 +50,9 @@ type KafkaConfig struct {
 
 // Service encapsulates the application's dependencies
 type Service struct {
-	Config         Config
-	S3Client       *s3.S3
-	KafkaConsumer  *kafka.Consumer
+	Config          Config
+	S3Client        *s3.S3
+	KafkaConsumer   *kafka.Consumer
 	PrometheusGauge *prometheus.GaugeVec
 }
 
@@ -65,7 +62,7 @@ func NewService(cfg Config) (*Service, error) {
 		Config: cfg,
 	}
 
-	// Initialize S3 if AWS config is provided
+	// Initialize AWS S3 if configuration is provided
 	if service.Config.AWS != nil {
 		s3Client, err := configureS3(service.Config.AWS)
 		if err != nil {
@@ -182,7 +179,7 @@ func loadConfig(path string) (Config, error) {
 
 // uploadToS3 uploads data to the specified S3 bucket with a timestamped key
 func uploadToS3(s3Svc *s3.S3, bucket string, data []byte) error {
-    timestamp := time.Now().Format("2006/01/02/15-04-05.000")
+	timestamp := time.Now().Format("2006/01/02/15-04-05.000")
 	key := filepath.Join(timestamp, "data.json")
 
 	input := &s3.PutObjectInput{
@@ -275,7 +272,7 @@ func handleDoorValues(doors *protos.Doors, gauge *prometheus.GaugeVec, vin strin
 }
 
 // startPrometheusServer launches the Prometheus metrics HTTP server
-func startPrometheusServer(ctx context.Context, addr string) {
+func startPrometheusServer(addr string) {
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
 
@@ -284,20 +281,9 @@ func startPrometheusServer(ctx context.Context, addr string) {
 		Handler: mux,
 	}
 
-	go func() {
-		log.Printf("Starting Prometheus metrics server at %s/metrics", addr)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Prometheus HTTP server failed: %v", err)
-		}
-	}()
-
-	// Shutdown the server gracefully on context cancellation
-	<-ctx.Done()
-	log.Println("Shutting down Prometheus HTTP server...")
-	ctxShutDown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := server.Shutdown(ctxShutDown); err != nil {
-		log.Fatalf("Prometheus server Shutdown Failed:%+v", err)
+	log.Printf("Starting Prometheus metrics server at %s/metrics", addr)
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Fatalf("Prometheus HTTP server failed: %v", err)
 	}
 }
 
@@ -319,76 +305,57 @@ func main() {
 		log.Fatalf("Service initialization error: %v", err)
 	}
 
-	// Create a context that is cancelled on interrupt signals
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// Handle OS signals for graceful shutdown
-	go func() {
-		sigChan := make(chan os.Signal, 1)
-		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-		sig := <-sigChan
-		log.Printf("Received signal '%v', initiating shutdown...", sig)
-		cancel()
-	}()
-
 	// Start Prometheus metrics server
-	go startPrometheusServer(ctx, ":2112")
+	go startPrometheusServer(":2112")
 
 	// Begin consuming Kafka messages
 	log.Println("Starting Kafka message consumption...")
 	for {
-		select {
-		case <-ctx.Done():
-			log.Println("Shutdown signal received. Exiting message consumption loop.")
-			return
-		default:
-			msg, err := service.KafkaConsumer.ReadMessage(-1)
-			if err != nil {
-				// Handle Kafka consumer errors
-				if kafkaError, ok := err.(kafka.Error); ok && kafkaError.Code() == kafka.ErrAllBrokersDown {
-					log.Printf("Kafka broker is down: %v", err)
-					time.Sleep(5 * time.Second) // Wait before retrying
-					continue
-				}
-				log.Printf("Error while consuming message: %v", err)
+		msg, err := service.KafkaConsumer.ReadMessage(-1)
+		if err != nil {
+			// Handle Kafka consumer errors
+			if kafkaError, ok := err.(kafka.Error); ok && kafkaError.Code() == kafka.ErrAllBrokersDown {
+				log.Printf("Kafka broker is down: %v", err)
+				time.Sleep(5 * time.Second) // Wait before retrying
 				continue
 			}
+			log.Printf("Error while consuming message: %v", err)
+			continue
+		}
 
-			// Deserialize the Protobuf message
-			vehicleData := &protos.Payload{}
-			if err := proto.Unmarshal(msg.Value, vehicleData); err != nil {
-				log.Printf("Failed to unmarshal Protobuf message: %v", err)
-				continue
+		// Deserialize the Protobuf message
+		vehicleData := &protos.Payload{}
+		if err := proto.Unmarshal(msg.Value, vehicleData); err != nil {
+			log.Printf("Failed to unmarshal Protobuf message: %v", err)
+			continue
+		}
+
+		// Marshal vehicleData to JSON
+		vehicleDataJSON, err := protojson.Marshal(vehicleData)
+		if err != nil {
+			log.Printf("Failed to marshal vehicleData to JSON: %v", err)
+			continue
+		}
+
+		log.Printf("Received Vehicle Data: %s", string(vehicleDataJSON))
+
+		// Process each Datum in the Payload
+		for _, datum := range vehicleData.Data {
+			fieldName := datum.Key.String()
+			value := datum.Value
+			processValue(fieldName, value, service.PrometheusGauge, vehicleData.Vin)
+		}
+
+		// Upload to S3 if enabled
+		if service.S3Client != nil {
+			if err := uploadToS3(service.S3Client, service.Config.AWS.Bucket, vehicleDataJSON); err != nil {
+				log.Printf("Failed to upload vehicle data to S3: %v", err)
 			}
+		}
 
-			// Marshal vehicleData to JSON
-			vehicleDataJSON, err := protojson.Marshal(vehicleData)
-			if err != nil {
-				log.Printf("Failed to marshal vehicleData to JSON: %v", err)
-				continue
-			}
-
-			log.Printf("Received Vehicle Data: %s", string(vehicleDataJSON))
-
-			// Process each Datum in the Payload
-			for _, datum := range vehicleData.Data {
-				fieldName := datum.Key.String()
-				value := datum.Value
-				processValue(fieldName, value, service.PrometheusGauge, vehicleData.Vin)
-			}
-
-			// Upload to S3 if enabled
-			if service.S3Client != nil {
-				if err := uploadToS3(service.S3Client, service.Config.AWS.Bucket, vehicleDataJSON); err != nil {
-					log.Printf("Failed to upload vehicle data to S3: %v", err)
-				}
-			}
-
-			// Commit the message offset after successful processing
-			if _, err := service.KafkaConsumer.CommitMessage(msg); err != nil {
-				log.Printf("Failed to commit Kafka message: %v", err)
-			}
+		// Commit the message offset after successful processing
+		if _, err := service.KafkaConsumer.CommitMessage(msg); err != nil {
+			log.Printf("Failed to commit Kafka message: %v", err)
 		}
 	}
 }
