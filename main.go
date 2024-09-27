@@ -203,6 +203,7 @@ func configureS3(s3Config *S3Config) *s3.S3 {
     }
 
     sess, err := session.NewSession(&aws.Config{
+        S3ForcePathStyle: aws.Bool(true), 
         Region:      aws.String(s3Config.Region),
         Credentials: credentials.NewStaticCredentials(s3Config.AccessKey, s3Config.SecretKey, ""),
         Endpoint:    aws.String(s3Config.Endpoint),
@@ -217,11 +218,17 @@ func configureS3(s3Config *S3Config) *s3.S3 {
 
 // Test the S3 connection by making a simple ListBuckets request
 func testS3Connection(s3Svc *s3.S3) bool {
-    _, err := s3Svc.ListBuckets(&s3.ListBucketsInput{})
+    result, err := s3Svc.ListBuckets(&s3.ListBucketsInput{})
     if err != nil {
         log.Printf("Failed to connect to S3: %v", err)
         return false
     }
+
+    log.Println("Successfully connected to S3. Buckets:")
+    for _, bucket := range result.Buckets {
+        log.Printf(" Present Buckets %s", aws.StringValue(bucket.Name))
+    }
+
     return true
 }
 // Example upload function (not used in connection test)
