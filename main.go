@@ -9,7 +9,6 @@ import (
 	"math"
 	"net/http"
 	"os"
-
 	"strconv"
 	"time"
 
@@ -20,9 +19,10 @@ import (
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/teslamotors/fleet-telemetry/protos"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/teslamotors/fleet-telemetry/protos"
 )
 
 // Config holds the entire configuration structure
@@ -106,9 +106,9 @@ func configureS3(s3Config *S3Config) (*s3.S3, error) {
 
 	sess, err := session.NewSession(&aws.Config{
 		S3ForcePathStyle: aws.Bool(true),
-		Region:            aws.String(s3Config.Region),
-		Credentials:      credentials.NewStaticCredentials(s3Config.AccessKey, s3Config.SecretKey, ""),
-		Endpoint:          aws.String(s3Config.Endpoint),
+		Region:           aws.String(s3Config.Region),
+		Credentials:     credentials.NewStaticCredentials(s3Config.AccessKey, s3Config.SecretKey, ""),
+		Endpoint:         aws.String(s3Config.Endpoint),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("unable to create AWS session: %w", err)
@@ -179,67 +179,114 @@ func loadConfig(path string) (Config, error) {
 
 // uploadToS3 uploads data to the specified S3 bucket with a timestamped key
 func uploadToS3(s3Svc *s3.S3, bucket string, data []byte) error {
-    // Generate current time in UTC with microsecond precision
-    now := time.Now().UTC()
-    timestamp := now.Format("20060102T150405.000000Z") // Format: YYYYMMDDTHHMMSS.microsecondsZ
+	// Generate current time in UTC with microsecond precision
+	now := time.Now().UTC()
+	timestamp := now.Format("20060102T150405.000000Z") // Format: YYYYMMDDTHHMMSS.microsecondsZ
 
-    // Define key structure based on the timestamp
-    // Example: 2024/04/27/15/30/45/20240427T153045.123456Z.json
-    key := fmt.Sprintf("%04d/%02d/%02d/%s.json",
-        now.Year(),
-        now.Month(),
-        now.Day(),
-        timestamp,
-    )
+	// Define key structure based on the timestamp
+	// Example: 2024/04/27/15/30/45/20240427T153045.123456Z.json
+	key := fmt.Sprintf("%04d/%02d/%02d/%s.json",
+		now.Year(),
+		now.Month(),
+		now.Day(),
+		timestamp,
+	)
 
-    // Prepare the S3 PutObject input
-    input := &s3.PutObjectInput{
-        Bucket: aws.String(bucket),
-        Key:    aws.String(key),
-        Body:   bytes.NewReader(data),
-        // Optionally, set ContentType and other metadata
-        ContentType: aws.String("application/json"),
-    }
+	// Prepare the S3 PutObject input
+	input := &s3.PutObjectInput{
+		Bucket:      aws.String(bucket),
+		Key:         aws.String(key),
+		Body:        bytes.NewReader(data),
+		ContentType: aws.String("application/json"),
+	}
 
-    // Upload the object to S3
-    _, err := s3Svc.PutObject(input)
-    if err != nil {
-        return fmt.Errorf("failed to upload to S3 at key '%s': %w", key, err)
-    }
+	// Upload the object to S3
+	_, err := s3Svc.PutObject(input)
+	if err != nil {
+		return fmt.Errorf("failed to upload to S3 at key '%s': %w", key, err)
+	}
 
-    log.Printf("Successfully uploaded data to S3 at key: %s", key)
-    return nil
+	log.Printf("Successfully uploaded data to S3 at key: %s", key)
+	return nil
 }
 
-// processValue handles different types of protobuf values and updates Prometheus metrics
-func processValue(fieldName string, value *protos.Value, gauge *prometheus.GaugeVec, vin string) {
-	switch v := value.Value.(type) {
-	case *protos.Value_DoubleValue:
-		gauge.WithLabelValues(fieldName, vin).Set(v.DoubleValue)
-	case *protos.Value_FloatValue:
-		gauge.WithLabelValues(fieldName, vin).Set(float64(v.FloatValue))
-	case *protos.Value_IntValue:
-		gauge.WithLabelValues(fieldName, vin).Set(float64(v.IntValue))
-	case *protos.Value_LongValue:
-		gauge.WithLabelValues(fieldName, vin).Set(float64(v.LongValue))
-	case *protos.Value_BooleanValue:
-		numericValue := boolToFloat64(v.BooleanValue)
+// PayloadJSON represents the structure of the JSON payload
+type PayloadJSON struct {
+	Data      []struct {
+		Key   string                 `json:"key"`
+		Value map[string]interface{} `json:"value"`
+	} `json:"data"`
+	CreatedAt string `json:"createdAt"`
+	Vin       string `json:"vin"`
+}
+
+// processValue handles different types of JSON values and updates Prometheus metrics
+func processValue(fieldName string, value map[string]interface{}, gauge *prometheus.GaugeVec, vin string) {
+	handled := false
+
+	if v, ok := value["doubleValue"].(float64); ok {
+		gauge.WithLabelValues(fieldName, vin).Set(v)
+		handled = true
+	}
+
+	if v, ok := value["floatValue"].(float64); ok {
+		gauge.WithLabelValues(fieldName, vin).Set(v)
+		handled = true
+	}
+
+	if v, ok := value["intValue"].(float64); ok {
+		gauge.WithLabelValues(fieldName, vin).Set(v)
+		handled = true
+	}
+
+	if v, ok := value["longValue"].(float64); ok {
+		gauge.WithLabelValues(fieldName, vin).Set(v)
+		handled = true
+	}
+
+	if v, ok := value["booleanValue"].(bool); ok {
+		numericValue := boolToFloat64(v)
 		gauge.WithLabelValues(fieldName, vin).Set(numericValue)
-	case *protos.Value_StringValue:
-		handleStringValue(v.StringValue, fieldName, gauge, vin)
-	case *protos.Value_Invalid:
+		handled = true
+	}
+
+	if v, ok := value["stringValue"].(string); ok {
+		handleStringValue(v, fieldName, gauge, vin)
+		handled = true
+	}
+
+	if _, ok := value["invalid"].(bool); ok {
 		log.Printf("Invalid value received for field '%s', setting as NaN", fieldName)
 		gauge.WithLabelValues(fieldName, vin).Set(math.NaN())
-	case *protos.Value_LocationValue:
-		gauge.WithLabelValues("Latitude", vin).Set(v.LocationValue.Latitude)
-		gauge.WithLabelValues("Longitude", vin).Set(v.LocationValue.Longitude)
-	case *protos.Value_DoorValue:
-		handleDoorValues(v.DoorValue, gauge, vin)
-	case *protos.Value_TimeValue:
-		totalSeconds := float64(v.TimeValue.Hour*3600 + v.TimeValue.Minute*60 + v.TimeValue.Second)
+		handled = true
+	}
+
+	if loc, ok := value["locationValue"].(map[string]interface{}); ok {
+		if latitude, latOk := loc["latitude"].(float64); latOk {
+			gauge.WithLabelValues("Latitude", vin).Set(latitude)
+		}
+		if longitude, lonOk := loc["longitude"].(float64); lonOk {
+			gauge.WithLabelValues("Longitude", vin).Set(longitude)
+		}
+		handled = true
+	}
+
+	if doors, ok := value["doorValue"].(map[string]interface{}); ok {
+		handleDoorValuesJSON(doors, gauge, vin)
+		handled = true
+	}
+
+	if timeVal, ok := value["timeValue"].(map[string]interface{}); ok {
+		hour, _ := getIntFromMap(timeVal, "hour")
+		minute, _ := getIntFromMap(timeVal, "minute")
+		second, _ := getIntFromMap(timeVal, "second")
+		totalSeconds := float64(hour*3600 + minute*60 + second)
 		gauge.WithLabelValues(fieldName, vin).Set(totalSeconds)
-	default:
-		log.Printf("Unhandled value type for field '%s'", fieldName)
+		handled = true
+	}
+
+	if !handled {
+		log.Printf("Unhandled value type for field '%s': %v", fieldName, value)
 	}
 }
 
@@ -268,21 +315,28 @@ func handleStringValue(stringValue, fieldName string, gauge *prometheus.GaugeVec
 	}
 }
 
-// handleDoorValues processes door states and updates Prometheus metrics
-func handleDoorValues(doors *protos.Doors, gauge *prometheus.GaugeVec, vin string) {
-	doorFields := map[string]bool{
-		"DriverFrontDoor":    doors.DriverFront,
-		"PassengerFrontDoor": doors.PassengerFront,
-		"DriverRearDoor":     doors.DriverRear,
-		"PassengerRearDoor":  doors.PassengerRear,
-		"TrunkFront":         doors.TrunkFront,
-		"TrunkRear":          doors.TrunkRear,
+// handleDoorValuesJSON processes door states from JSON and updates Prometheus metrics
+func handleDoorValuesJSON(doors map[string]interface{}, gauge *prometheus.GaugeVec, vin string) {
+	doorFields := map[string]bool{}
+
+	for key, val := range doors {
+		if boolVal, ok := val.(bool); ok {
+			doorFields[key] = boolVal
+		}
 	}
 
 	for doorName, state := range doorFields {
 		numericValue := boolToFloat64(state)
 		gauge.WithLabelValues(doorName, vin).Set(numericValue)
 	}
+}
+
+// getIntFromMap retrieves an integer from a map with default value
+func getIntFromMap(m map[string]interface{}, key string) (int, bool) {
+	if val, ok := m[key].(float64); ok {
+		return int(val), true
+	}
+	return 0, false
 }
 
 // startPrometheusServer launches the Prometheus metrics HTTP server
@@ -353,11 +407,18 @@ func main() {
 
 		log.Printf("Received Vehicle Data: %s", string(vehicleDataJSON))
 
+		// Unmarshal JSON into PayloadJSON
+		var payload PayloadJSON
+		if err := json.Unmarshal(vehicleDataJSON, &payload); err != nil {
+			log.Printf("Failed to unmarshal vehicleData JSON: %v", err)
+			continue
+		}
+
 		// Process each Datum in the Payload
-		for _, datum := range vehicleData.Data {
-			fieldName := datum.Key.String()
+		for _, datum := range payload.Data {
+			fieldName := datum.Key
 			value := datum.Value
-			processValue(fieldName, value, service.PrometheusGauge, vehicleData.Vin)
+			processValue(fieldName, value, service.PrometheusGauge, payload.Vin)
 		}
 
 		// Upload to S3 if enabled
