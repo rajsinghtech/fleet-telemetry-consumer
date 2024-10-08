@@ -8,8 +8,8 @@
     "aws": {
         "bucket": "ceph-bkt-tesla",
         "endpoint": "http://rook-ceph-rgw-my-store.rook-ceph:80",  
-        "accessKey": "NT3HV94UFA7M724PL5RM",
-        "secretKey": "pskWHqYLK6Jpcjz0NSCrrfZqPlnLxzAB5HdK1Mpt",
+        "accessKey": "9SVU0V9W84O4I80U0RR6",
+        "secretKey": "31zQ864x0rvWHwyWlTcYhUXJjo7nEJ4uwUCarOB8",
         "region": "us-west-1" 
     }
 }

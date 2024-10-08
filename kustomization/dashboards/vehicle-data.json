@@ -134,51 +134,6 @@
               "showLegend": true,
               "style": {
                 "color": {
-                  "fixed": "dark-red"
-                },
-                "opacity": 0.2,
-                "rotation": {
-                  "fixed": 0,
-                  "max": 360,
-                  "min": -360,
-                  "mode": "mod"
-                },
-                "size": {
-                  "fixed": 10,
-                  "max": 20,
-                  "min": 15
-                },
-                "symbol": {
-                  "fixed": "img/icons/marker/star.svg",
-                  "mode": "fixed"
-                },
-                "symbolAlign": {
-                  "horizontal": "center",
-                  "vertical": "center"
-                },
-                "textConfig": {
-                  "fontSize": 12,
-                  "offsetX": 0,
-                  "offsetY": 0,
-                  "textAlign": "center",
-                  "textBaseline": "middle"
-                }
-              }
-            },
-            "location": {
-              "latitude": "7SAYGDEEXRA288618 LocationLatitude",
-              "longitude": "7SAYGDEEXRA288618 LocationLongitude",
-              "mode": "coords"
-            },
-            "name": "Destinations",
-            "tooltip": true,
-            "type": "markers"
-          },
-          {
-            "config": {
-              "showLegend": true,
-              "style": {
-                "color": {
                   "fixed": "semi-dark-blue"
                 },
                 "opacity": 1,
@@ -189,7 +144,7 @@
                   "mode": "mod"
                 },
                 "size": {
-                  "fixed": 10,
+                  "fixed": 1,
                   "max": 15,
                   "min": 2
                 },
@@ -216,6 +171,56 @@
               "mode": "coords"
             },
             "name": "Car",
+            "tooltip": true,
+            "type": "markers"
+          },
+          {
+            "config": {
+              "showLegend": true,
+              "style": {
+                "color": {
+                  "fixed": "dark-red"
+                },
+                "opacity": 1,
+                "rotation": {
+                  "fixed": 0,
+                  "max": 360,
+                  "min": -360,
+                  "mode": "mod"
+                },
+                "size": {
+                  "fixed": 10,
+                  "max": 15,
+                  "min": 2
+                },
+                "symbol": {
+                  "fixed": "img/icons/marker/star.svg",
+                  "mode": "fixed"
+                },
+                "symbolAlign": {
+                  "horizontal": "center",
+                  "vertical": "center"
+                },
+                "text": {
+                  "field": "7SAYGDEEXRA288618 DestinationLocationLatitude",
+                  "fixed": "",
+                  "mode": "fixed"
+                },
+                "textConfig": {
+                  "fontSize": 12,
+                  "offsetX": 0,
+                  "offsetY": 0,
+                  "textAlign": "center",
+                  "textBaseline": "middle"
+                }
+              }
+            },
+            "location": {
+              "latitude": "7SAYGDEEXRA288618 DestinationLocationLatitude",
+              "longitude": "7SAYGDEEXRA288618 DestinationLocationLongitude",
+              "mode": "coords"
+            },
+            "name": "Destination",
             "tooltip": true,
             "type": "markers"
           }
@@ -644,21 +649,6 @@
           "legendFormat": "{{vin}} Voltage",
           "range": true,
           "refId": "B"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "editorMode": "code",
-          "exemplar": false,
-          "expr": "(avg(vehicle_data{field=\"PackCurrent\"}) by (vin)) * (avg(vehicle_data{field=\"PackVoltage\"}) by (vin))",
-          "format": "time_series",
-          "hide": false,
-          "instant": false,
-          "legendFormat": "{{vin}} Power",
-          "range": true,
-          "refId": "C"
         }
       ],
       "title": "Battery",
@@ -876,27 +866,27 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "mode": "continuous-GrYlRd"
           },
           "custom": {
             "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
-            "axisLabel": "Distance (km)",
-            "axisPlacement": "hidden",
+            "axisLabel": "",
+            "axisPlacement": "auto",
             "barAlignment": 0,
             "barWidthFactor": 0.6,
-            "drawStyle": "points",
-            "fillOpacity": 0,
-            "gradientMode": "none",
+            "drawStyle": "line",
+            "fillOpacity": 20,
+            "gradientMode": "scheme",
             "hideFrom": {
               "legend": false,
               "tooltip": false,
               "viz": false
             },
             "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
+            "lineInterpolation": "smooth",
+            "lineWidth": 3,
             "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
@@ -924,8 +914,7 @@
                 "value": 80
               }
             ]
-          },
-          "unit": "short"
+          }
         },
         "overrides": []
       },
@@ -939,9 +928,9 @@
       "options": {
         "legend": {
           "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
+          "displayMode": "hidden",
+          "placement": "right",
+          "showLegend": false
         },
         "tooltip": {
           "mode": "single",
@@ -1158,13 +1147,13 @@
     "list": []
   },
   "time": {
-    "from": "now-6h",
+    "from": "now-12h",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "",
   "title": "Vehicle Data",
   "uid": "cdz1a9i11r3lsf",
-  "version": 14,
+  "version": 2,
   "weekStart": ""
 }
