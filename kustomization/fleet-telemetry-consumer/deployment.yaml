@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: fleet-telemetry-consumer
-          image: quay.io/rajsinghcpre/fleet-telemetry-consumer:v0.0.16
+          image: quay.io/rajsinghcpre/fleet-telemetry-consumer:v0.0.17
           # Removed the command that uses the config file
           volumeMounts:
             - name: data

@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"net/http"
@@ -146,6 +147,13 @@ func NewService(cfg Config) (*Service, error) {
 		log.Println("PostgreSQL storage is disabled.")
 	}
 
+	// Load existing S3 data if both S3 and PostgreSQL are enabled
+	if service.S3Client != nil && service.DB != nil {
+		if err := loadExistingS3Data(service); err != nil {
+			return nil, fmt.Errorf("failed to load existing S3 data: %w", err)
+		}
+	}
+
 	return service, nil
 }
 
@@ -274,7 +282,8 @@ func createTelemetryTable(db *sql.DB) error {
 		vin TEXT,
 		key INTEGER,
 		value JSONB,
-		created_at TIMESTAMPTZ
+		created_at TIMESTAMPTZ,
+        UNIQUE (vin, key, created_at)
 	);
 	`
 	_, err := db.Exec(createTableQuery)
@@ -421,6 +430,7 @@ func insertTelemetryData(db *sql.DB, vin string, key int, value interface{}, cre
 	insertQuery := `
 	INSERT INTO telemetry_data (vin, key, value, created_at)
 	VALUES ($1, $2, $3, $4)
+	ON CONFLICT (vin, key, created_at) DO NOTHING;
 	`
 	valueJSON, err := json.Marshal(value)
 	if err != nil {
@@ -633,6 +643,105 @@ func startConsumerLoop(service *Service, ctx context.Context, wg *sync.WaitGroup
 			}
 		}
 	}
+}
+
+// loadExistingS3Data loads all .pb files from the S3 bucket and processes them
+func loadExistingS3Data(service *Service) error {
+	if service.S3Client == nil || service.DB == nil {
+		// Either S3 or PostgreSQL is not enabled; nothing to do
+		return nil
+	}
+
+	bucket := service.Config.AWS.Bucket
+
+	// List all .pb objects in the bucket
+	listInput := &s3.ListObjectsV2Input{
+		Bucket: aws.String(bucket),
+	}
+
+	log.Printf("Listing all .pb files in S3 bucket: %s", bucket)
+
+	var continuationToken *string = nil
+	for {
+		if continuationToken != nil {
+			listInput.ContinuationToken = continuationToken
+		}
+
+		result, err := service.S3Client.ListObjectsV2(listInput)
+		if err != nil {
+			return fmt.Errorf("failed to list objects in S3 bucket '%s': %w", bucket, err)
+		}
+
+		for _, object := range result.Contents {
+			key := aws.StringValue(object.Key)
+			if filepath.Ext(key) != ".pb" {
+				continue // Skip non-.pb files
+			}
+
+			log.Printf("Processing S3 object: %s", key)
+
+			// Download the .pb file
+			getObjInput := &s3.GetObjectInput{
+				Bucket: aws.String(bucket),
+				Key:    aws.String(key),
+			}
+
+			resp, err := service.S3Client.GetObject(getObjInput)
+			if err != nil {
+				log.Printf("Failed to download S3 object '%s': %v", key, err)
+				continue
+			}
+
+			defer resp.Body.Close()
+
+			data, err := io.ReadAll(resp.Body)
+			if err != nil {
+				log.Printf("Failed to read S3 object '%s': %v", key, err)
+				continue
+			}
+
+			// Deserialize the Protobuf message
+			vehicleData := &protos.Payload{}
+			if err := proto.Unmarshal(data, vehicleData); err != nil {
+				log.Printf("Failed to unmarshal Protobuf data from '%s': %v", key, err)
+				continue
+			}
+
+			log.Printf("Loaded Vehicle Data for VIN %s from S3 key %s", vehicleData.Vin, key)
+
+			// Convert created_at to time.Time
+			createdAt := time.Unix(vehicleData.CreatedAt.Seconds, int64(vehicleData.CreatedAt.Nanos)).UTC()
+
+			// Process each Datum in the Payload
+			for _, datum := range vehicleData.Data {
+				processValue(datum, service, vehicleData.Vin, createdAt)
+			}
+
+			// Optionally, you can delete the object after processing to prevent reprocessing
+			// Uncomment the following lines if you choose to delete processed files
+			/*
+				deleteInput := &s3.DeleteObjectInput{
+					Bucket: aws.String(bucket),
+					Key:    aws.String(key),
+				}
+				_, err = service.S3Client.DeleteObject(deleteInput)
+				if err != nil {
+					log.Printf("Failed to delete S3 object '%s': %v", key, err)
+				} else {
+					log.Printf("Deleted S3 object '%s' after processing", key)
+				}
+			*/
+		}
+
+		if result.IsTruncated != nil && *result.IsTruncated {
+			continuationToken = result.NextContinuationToken
+		} else {
+			break
+		}
+	}
+
+	log.Println("Completed loading existing S3 data.")
+	return nil
 }
 
 // main is the entry point of the application
