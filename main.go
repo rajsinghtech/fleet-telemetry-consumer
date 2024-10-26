@@ -4,11 +4,9 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
-	"math"
 	"net/http"
 	"os"
 	"os/signal"
@@ -28,6 +26,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/protobuf/proto"
 	"github.com/teslamotors/fleet-telemetry/protos"
+)
+
+// Define the field keys as constants if they are not already defined
+const (
+	Field_VehicleSpeed = "vehicle_speed"
+	// Add other field constants as needed
 )
 
 // Config holds the entire configuration structure
@@ -83,15 +87,26 @@ type Service struct {
 	LocalBackupEnabled bool
 	LocalBasePath      string
 	KafkaConsumer      *kafka.Consumer
-	PrometheusMetrics  *Metrics
+	PrometheusMetrics  *PrometheusMetrics
 	DB                 *sql.DB
 }
 
-// Metrics holds all Prometheus metrics
-type Metrics struct {
-	Gauge     *prometheus.GaugeVec
-	Latitude  *prometheus.GaugeVec
-	Longitude *prometheus.GaugeVec
+// PrometheusMetrics holds the Prometheus metrics
+type PrometheusMetrics struct {
+	Gauge *prometheus.GaugeVec
+}
+
+// NewPrometheusMetrics initializes Prometheus metrics
+func NewPrometheusMetrics() *PrometheusMetrics {
+	return &PrometheusMetrics{
+		Gauge: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "vehicle_data",
+				Help: "Vehicle telemetry data",
+			},
+			[]string{"field", "vin"},
+		),
+	}
 }
 
 // NewService initializes the service with configurations
@@ -100,7 +115,7 @@ func NewService(cfg Config) (*Service, error) {
 		Config:             cfg,
 		LocalBackupEnabled: cfg.Local != nil && cfg.Local.Enabled,
 		LocalBasePath:      "",
-		PrometheusMetrics:  initializePrometheusMetrics(),
+		PrometheusMetrics:  NewPrometheusMetrics(),
 	}
 
 	if service.LocalBackupEnabled {
@@ -132,34 +147,11 @@ func NewService(cfg Config) (*Service, error) {
 	return service, nil
 }
 
-// initializePrometheusMetrics sets up Prometheus metrics
-func initializePrometheusMetrics() *Metrics {
-	metrics := &Metrics{
-		Gauge: prometheus.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Name: "vehicle_data",
-				Help: "Vehicle data metrics",
-			},
-			[]string{"field", "vin"},
-		),
-		Latitude: prometheus.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Name: "vehicle_data_latitude",
-				Help: "Vehicle latitude metrics",
-			},
-			[]string{"field", "vin"},
-		),
-		Longitude: prometheus.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Name: "vehicle_data_longitude",
-				Help: "Vehicle longitude metrics",
-			},
-			[]string{"field", "vin"},
-		),
-	}
-
-	prometheus.MustRegister(metrics.Gauge, metrics.Latitude, metrics.Longitude)
-	return metrics
+// Define the Metrics struct
+type Metrics struct {
+	Gauge     *prometheus.GaugeVec
+	Latitude  *prometheus.GaugeVec
+	Longitude *prometheus.GaugeVec
 }
 
 // configureS3 sets up the AWS S3 client
@@ -421,22 +413,98 @@ func backupLocally(basePath, vin string, data []byte, createdAt time.Time) error
 }
 
 // insertTelemetryData inserts telemetry data into PostgreSQL
-func insertTelemetryData(db *sql.DB, vin string, key int, value interface{}, createdAt time.Time) error {
+func insertTelemetryData(db *sql.DB, vin string, datum *protos.Datum, createdAt time.Time) error {
+	// Prepare the insert query with columns for each field
 	insertQuery := `
-	INSERT INTO telemetry_data (vin, key, value, created_at)
-	VALUES ($1, $2, $3, $4)
-	ON CONFLICT (vin, key, created_at) DO NOTHING;
+	INSERT INTO telemetry_data (
+		vin, created_at, drive_rail, charge_state, bms_fullchargecomplete, vehicle_speed, 
+		odometer, pack_voltage, pack_current, soc, dcdc_enable, gear, isolation_resistance, 
+		pedal_position, brake_pedal, di_state_r, di_heatsink_tr, di_axle_speed_r, 
+		di_torquemotor, di_stator_temp_r, di_vbat_r, di_motor_current_r, location_latitude, 
+		location_longitude, gps_state, gps_heading, num_brick_voltage_max, brick_voltage_max, 
+		num_brick_voltage_min, brick_voltage_min, num_module_temp_max, module_temp_max, 
+		num_module_temp_min, module_temp_min, rated_range, hvil, dc_charging_energy_in, 
+		dc_charging_power, ac_charging_energy_in, ac_charging_power, charge_limit_soc, 
+		fast_charger_present, est_battery_range, ideal_battery_range, battery_level, 
+		time_to_full_charge, scheduled_charging_start_time, scheduled_charging_pending, 
+		scheduled_departure_time, preconditioning_enabled, scheduled_charging_mode, 
+		charge_amps, charge_enable_request, charger_phases, charge_port_cold_weather_mode, 
+		charge_current_request, semitruck_tpms_pressure_re2r0, semitruck_tpms_pressure_re2r1, 
+		tpms_last_seen_pressure_time_fl, tpms_last_seen_pressure_time_fr, 
+		tpms_last_seen_pressure_time_rl, tpms_last_seen_pressure_time_rr, inside_temp, 
+		outside_temp, seat_heater_left, seat_heater_right, seat_heater_rear_left, 
+		seat_heater_rear_right, seat_heater_rear_center, auto_seat_climate_left, 
+		auto_seat_climate_right, driver_seat_belt, passenger_seat_belt, driver_seat_occupied, 
+		semitruck_passenger_seat_fold_position, lateral_acceleration, longitudinal_acceleration, 
+		cruise_state, cruise_set_speed, lifetime_energy_used, lifetime_energy_used_drive, 
+		semitruck_tractor_park_brake_status, semitruck_trailer_park_brake_status, 
+		brake_pedal_pos, route_last_updated, route_line, miles_to_arrival, minutes_to_arrival, 
+		origin_location, destination_location, car_type, trim, exterior_color, roof_color, 
+		charge_port, charge_port_latch, experimental_1, experimental_2, experimental_3, 
+		experimental_4, guest_mode_enabled, pin_to_drive_enabled, paired_phone_key_and_key_fob_qty, 
+		cruise_follow_distance, automatic_blind_spot_camera, blind_spot_collision_warning_chime, 
+		speed_limit_warning, forward_collision_warning, lane_departure_avoidance, 
+		emergency_lane_departure_avoidance, automatic_emergency_braking_off, 
+		lifetime_energy_gained_regen, di_state_f, di_state_rel, di_state_rer, di_heatsink_tf, 
+		di_heatsink_trel, di_heatsink_trer, di_axle_speed_f, di_axle_speed_rel, di_axle_speed_rer, 
+		di_slave_torque_cmd, di_torque_actual_r, di_torque_actual_f, di_torque_actual_rel, 
+		di_torque_actual_rer, di_stator_temp_f, di_stator_temp_rel, di_stator_temp_rer, 
+		di_vbat_f, di_vbat_rel, di_vbat_rer, di_motor_current_f, di_motor_current_rel, 
+		di_motor_current_rer, energy_remaining, service_mode, bms_state, 
+		guest_mode_mobile_access_state, deprecated_1, destination_name, di_inverter_tr, 
+		di_inverter_tf, di_inverter_trel, di_inverter_trer, experimental_5, experimental_6, 
+		experimental_7, experimental_8, experimental_9, experimental_10, experimental_11, 
+		experimental_12, experimental_13, experimental_14, experimental_15, detailed_charge_state
+	) VALUES (
+		$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, 
+		$21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, 
+		$39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54, $55, $56, 
+		$57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70, $71, $72, $73, $74, 
+		$75, $76, $77, $78, $79, $80, $81, $82, $83, $84, $85, $86, $87, $88, $89, $90, $91, $92, 
+		$93, $94, $95, $96, $97, $98, $99, $100, $101, $102, $103, $104, $105, $106, $107, $108, 
+		$109, $110, $111, $112, $113, $114, $115, $116, $117, $118, $119, $120, $121, $122, $123, 
+		$124, $125, $126, $127, $128, $129, $130, $131, $132, $133, $134, $135, $136, $137, $138, 
+		$139, $140, $141, $142, $143, $144, $145, $146, $147, $148, $149, $150, $151, $152, $153, 
+		$154, $155, $156, $157, $158, $159, $160, $161, $162, $163, $164, $165, $166, $167, $168, 
+		$169, $170, $171, $172, $173, $174, $175, $176, $177, $178, $179
+	)
 	`
-	valueJSON, err := json.Marshal(value)
-	if err != nil {
-		return fmt.Errorf("failed to marshal value to JSON: %w", err)
+
+	// Convert Datum to SQL values
+	values := make([]interface{}, 179)
+	values[0] = vin
+	values[1] = createdAt
+
+	for i := range protos.Field_name {
+		if datum.Key == protos.Field(i) {
+			switch v := datum.Value.Value.(type) {
+			case *protos.Value_StringValue:
+				values[i+2] = v.StringValue
+			case *protos.Value_IntValue:
+				values[i+2] = v.IntValue
+			case *protos.Value_LongValue:
+				values[i+2] = v.LongValue
+			case *protos.Value_FloatValue:
+				values[i+2] = v.FloatValue
+			case *protos.Value_DoubleValue:
+				values[i+2] = v.DoubleValue
+			case *protos.Value_BooleanValue:
+				values[i+2] = v.BooleanValue
+			case *protos.Value_LocationValue:
+				values[i+2] = v.LocationValue.Latitude
+				values[i+3] = v.LocationValue.Longitude
+			case *protos.Value_Invalid:
+				values[i+2] = nil
+			default:
+				values[i+2] = nil
+			}
+		}
 	}
 
-	_, err = db.Exec(insertQuery, vin, key, string(valueJSON), createdAt)
+	_, err := db.Exec(insertQuery, values...)
 	if err != nil {
-		return fmt.Errorf("failed to insert telemetry data into PostgreSQL: %w", err)
+		return fmt.Errorf("failed to insert telemetry data: %w", err)
 	}
-
 	return nil
 }
 
@@ -446,14 +514,15 @@ func processValue(datum *protos.Datum, service *Service, vin string, createdAt t
 
 	// Insert into PostgreSQL if enabled
 	if service.DB != nil {
-		if err := insertTelemetryData(service.DB, vin, int(datum.Key), datum.Value.Value, createdAt); err != nil {
+		if err := insertTelemetryData(service.DB, vin, datum, createdAt); err != nil {
 			log.Printf("PostgreSQL insert error for VIN %s, key %d: %v", vin, datum.Key, err)
 		}
 	}
 
+	// Update Prometheus metrics
 	switch v := datum.Value.Value.(type) {
 	case *protos.Value_StringValue:
-		handleStringValue(v.StringValue, fieldName, service, vin)
+		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(1)
 	case *protos.Value_IntValue:
 		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(float64(v.IntValue))
 	case *protos.Value_LongValue:
@@ -466,23 +535,63 @@ func processValue(datum *protos.Datum, service *Service, vin string, createdAt t
 		numericValue := boolToFloat64(v.BooleanValue)
 		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(numericValue)
 	case *protos.Value_LocationValue:
-		// Update separate Latitude and Longitude metrics with the field name as a label
-		service.PrometheusMetrics.Latitude.WithLabelValues(fieldName, vin).Set(v.LocationValue.Latitude)
-		service.PrometheusMetrics.Longitude.WithLabelValues(fieldName, vin).Set(v.LocationValue.Longitude)
-	case *protos.Value_DoorValue:
-		handleDoorValues(v.DoorValue, service.PrometheusMetrics.Gauge, vin)
-	case *protos.Value_TimeValue:
-		totalSeconds := float64(v.TimeValue.Hour*3600 + v.TimeValue.Minute*60 + v.TimeValue.Second)
-		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(totalSeconds)
-	// Handle enums by setting their integer values
+		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName+"_latitude", vin).Set(v.LocationValue.Latitude)
+		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName+"_longitude", vin).Set(v.LocationValue.Longitude)
 	case *protos.Value_ChargingValue:
 		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(float64(v.ChargingValue))
-	// Add other enum cases as needed
+	case *protos.Value_ShiftStateValue:
+		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(float64(v.ShiftStateValue))
 	case *protos.Value_Invalid:
 		log.Printf("Invalid value received for field '%s', setting as NaN", fieldName)
-		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(math.NaN())
+			service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(0)
+	case *protos.Value_LaneAssistLevelValue:
+		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(float64(v.LaneAssistLevelValue))
+	case *protos.Value_ScheduledChargingModeValue:
+		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(float64(v.ScheduledChargingModeValue))
+	case *protos.Value_SentryModeStateValue:
+		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(float64(v.SentryModeStateValue))
+	case *protos.Value_SpeedAssistLevelValue:
+		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(float64(v.SpeedAssistLevelValue))
+	case *protos.Value_BmsStateValue:
+		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(float64(v.BmsStateValue))
+	case *protos.Value_BuckleStatusValue:
+		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(float64(v.BuckleStatusValue))
+	case *protos.Value_CarTypeValue:
+		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(float64(v.CarTypeValue))
+	case *protos.Value_ChargePortValue:
+		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(float64(v.ChargePortValue))
+	case *protos.Value_ChargePortLatchValue:
+		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(float64(v.ChargePortLatchValue))
+	case *protos.Value_CruiseStateValue:
+		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(float64(v.CruiseStateValue))
+	case *protos.Value_DoorValue:
+		// Assuming DoorValue is a complex type, handle it accordingly
+		// Example: service.PrometheusMetrics.Gauge.WithLabelValues(fieldName+"_driver_front", vin).Set(boolToFloat64(v.DoorValue.DriverFront))
+	case *protos.Value_DriveInverterStateValue:
+		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(float64(v.DriveInverterStateValue))
+	case *protos.Value_HvilStatusValue:
+		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(float64(v.HvilStatusValue))
+	case *protos.Value_WindowStateValue:
+		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(float64(v.WindowStateValue))
+	case *protos.Value_SeatFoldPositionValue:
+		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(float64(v.SeatFoldPositionValue))
+	case *protos.Value_TractorAirStatusValue:
+		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(float64(v.TractorAirStatusValue))
+	case *protos.Value_FollowDistanceValue:
+		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(float64(v.FollowDistanceValue))
+	case *protos.Value_ForwardCollisionSensitivityValue:
+		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(float64(v.ForwardCollisionSensitivityValue))
+	case *protos.Value_GuestModeMobileAccessValue:
+		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(float64(v.GuestModeMobileAccessValue))
+	case *protos.Value_TrailerAirStatusValue:
+		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(float64(v.TrailerAirStatusValue))
+	case *protos.Value_TimeValue:
+		// Assuming TimeValue is a complex type, handle it accordingly
+		// Example: service.PrometheusMetrics.Gauge.WithLabelValues(fieldName+"_hour", vin).Set(float64(v.TimeValue.Hour))
+	case *protos.Value_DetailedChargeStateValue:
+		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(float64(v.DetailedChargeStateValue))
 	default:
-		log.Printf("Unhandled value type for field '%s': %T", fieldName, v)
+		log.Printf("Unhandled value type for field '%s'", fieldName)
 	}
 }
 
@@ -492,40 +601,6 @@ func boolToFloat64(value bool) float64 {
 		return 1.0
 	}
 	return 0.0
-}
-
-// handleStringValue processes string values, attempting to parse them as floats
-func handleStringValue(stringValue, fieldName string, service *Service, vin string) {
-	if stringValue == "<invalid>" || stringValue == "\u003cinvalid\u003e" {
-		log.Printf("Invalid string value received for field '%s', setting as NaN", fieldName)
-		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(math.NaN())
-		return
-	}
-
-	floatVal, err := strconv.ParseFloat(stringValue, 64)
-	if err == nil {
-		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(floatVal)
-	} else {
-		log.Printf("Non-numeric string value received for field '%s': '%s', setting as NaN", fieldName, stringValue)
-		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(math.NaN())
-	}
-}
-
-// handleDoorValues processes door states from Protobuf and updates Prometheus metrics
-func handleDoorValues(doors *protos.Doors, gauge *prometheus.GaugeVec, vin string) {
-	doorFields := map[string]bool{
-		"DriverFront":    doors.DriverFront,
-		"PassengerFront": doors.PassengerFront,
-		"DriverRear":     doors.DriverRear,
-		"PassengerRear":  doors.PassengerRear,
-		"TrunkFront":     doors.TrunkFront,
-		"TrunkRear":      doors.TrunkRear,
-	}
-
-	for doorName, state := range doorFields {
-		numericValue := boolToFloat64(state)
-		gauge.WithLabelValues(doorName, vin).Set(numericValue)
-	}
 }
 
 // startPrometheusServer launches the Prometheus metrics HTTP server
@@ -801,6 +876,10 @@ func main() {
 	if promAddr == "" {
 		promAddr = ":2112"
 	}
+
+	// Initialize Prometheus metrics
+	promMetrics := NewPrometheusMetrics()
+	prometheus.MustRegister(promMetrics.Gauge)
 
 	// Initialize service
 	service, err := NewService(cfg)
