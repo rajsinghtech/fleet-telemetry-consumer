@@ -107,44 +107,18 @@ func NewService(cfg Config) (*Service, error) {
 	}
 
 	// Initialize AWS S3 if enabled
-	if cfg.AWS != nil && cfg.AWS.Enabled {
-		s3Client, err := configureS3(cfg.AWS)
-		if err != nil {
-			return nil, fmt.Errorf("failed to configure S3: %w", err)
-		}
-		service.S3Client = s3Client
-
-		if err := testS3Connection(s3Client, cfg.AWS.Bucket); err != nil {
-			return nil, fmt.Errorf("S3 connection test failed: %w", err)
-		}
-		log.Println("S3 connection established successfully.")
-	} else {
-		log.Println("AWS S3 uploads are disabled.")
+	if err := initializeS3(service, cfg.AWS); err != nil {
+		return nil, err
 	}
 
 	// Initialize Kafka consumer
-	consumer, err := configureKafka(cfg.Kafka)
-	if err != nil {
-		return nil, fmt.Errorf("failed to configure Kafka consumer: %w", err)
+	if err := initializeKafka(service, cfg.Kafka); err != nil {
+		return nil, err
 	}
-	service.KafkaConsumer = consumer
 
 	// Initialize PostgreSQL if enabled
-	if cfg.PostgreSQL != nil && cfg.PostgreSQL.Enabled {
-		db, err := configurePostgreSQL(cfg.PostgreSQL)
-		if err != nil {
-			return nil, fmt.Errorf("failed to configure PostgreSQL: %w", err)
-		}
-		service.DB = db
-		log.Println("PostgreSQL connection established successfully.")
-
-		// Create table if it doesn't exist
-		if err := createTelemetryTable(db); err != nil {
-			return nil, fmt.Errorf("failed to create telemetry table: %w", err)
-		}
-		log.Println("Telemetry table is ready.")
-	} else {
-		log.Println("PostgreSQL storage is disabled.")
+	if err := initializePostgreSQL(service, cfg.PostgreSQL); err != nil {
+		return nil, err
 	}
 
 	// Load existing S3 data if both S3 and PostgreSQL are enabled
@@ -381,8 +355,17 @@ func loadConfigFromEnv() (Config, error) {
 	return cfg, nil
 }
 
-// uploadToS3 uploads Protobuf data to the specified S3 bucket with a vin/year/month/day key structure
-func uploadToS3(s3Svc *s3.S3, bucket, vin string, data []byte, key string) error {
+// uploadToS3 uploads Protobuf data to the specified S3 bucket with a vin/year/month/day/createdAt key structure
+func uploadToS3(s3Svc *s3.S3, bucket, vin string, data []byte, createdAt time.Time) error {
+	key := fmt.Sprintf("%s/%04d/%02d/%02d/%04d%02d%02dT%02d%02d%02d.%09dZ.pb",
+		vin,
+		createdAt.Year(),
+		int(createdAt.Month()),
+		createdAt.Day(),
+		createdAt.Year(), int(createdAt.Month()), createdAt.Day(),
+		createdAt.Hour(), createdAt.Minute(), createdAt.Second(), createdAt.Nanosecond(),
+	)
+
 	input := &s3.PutObjectInput{
 		Bucket:      aws.String(bucket),
 		Key:         aws.String(key),
@@ -399,21 +382,24 @@ func uploadToS3(s3Svc *s3.S3, bucket, vin string, data []byte, key string) error
 	return nil
 }
 
-// backupLocally saves Protobuf data to the local filesystem with a vin/year/month/day folder structure
-func backupLocally(basePath, vin string, data []byte, key string) error {
-	// Extract the filename from the key
-	fileName := filepath.Base(key)
-
+// backupLocally saves Protobuf data to the local filesystem with a vin/year/month/day/createdAt filename structure
+func backupLocally(basePath, vin string, data []byte, createdAt time.Time) error {
 	// Create the directories as per the existing structure
 	dirPath := filepath.Join(basePath,
 		vin,
-		fmt.Sprintf("%04d", time.Now().UTC().Year()),
-		fmt.Sprintf("%02d", time.Now().UTC().Month()),
-		fmt.Sprintf("%02d", time.Now().UTC().Day()),
+		fmt.Sprintf("%04d", createdAt.Year()),
+		fmt.Sprintf("%02d", createdAt.Month()),
+		fmt.Sprintf("%02d", createdAt.Day()),
 	)
 	if err := os.MkdirAll(dirPath, os.ModePerm); err != nil {
 		return fmt.Errorf("failed to create directories '%s': %w", dirPath, err)
 	}
+
+	// Use createdAt as the filename
+	fileName := fmt.Sprintf("%04d%02d%02dT%02d%02d%02d.%09dZ.pb",
+		createdAt.Year(), int(createdAt.Month()), createdAt.Day(),
+		createdAt.Hour(), createdAt.Minute(), createdAt.Second(), createdAt.Nanosecond(),
+	)
 
 	// Full file path
 	filePath := filepath.Join(dirPath, fileName)
@@ -613,26 +599,16 @@ func startConsumerLoop(service *Service, ctx context.Context, wg *sync.WaitGroup
 				continue
 			}
 
-			// Define the key with .pb extension
-			key := fmt.Sprintf("%s/%04d/%02d/%02d/%04d%02d%02dT%02d%02d%02d.%06dZ.pb",
-				vehicleData.Vin,
-				createdAt.Year(),
-				int(createdAt.Month()),
-				createdAt.Day(),
-				createdAt.Year(), int(createdAt.Month()), createdAt.Day(),
-				createdAt.Hour(), createdAt.Minute(), createdAt.Second(), createdAt.Nanosecond()/1000,
-			)
-
 			// Upload to S3 if enabled
 			if service.S3Client != nil {
-				if err := uploadToS3(service.S3Client, service.Config.AWS.Bucket, vehicleData.Vin, serializedData, key); err != nil {
+				if err := uploadToS3(service.S3Client, service.Config.AWS.Bucket, vehicleData.Vin, serializedData, createdAt); err != nil {
 					log.Printf("Failed to upload vehicle data to S3: %v", err)
 				}
 			}
 
 			// Backup locally if enabled
 			if service.LocalBackupEnabled {
-				if err := backupLocally(service.LocalBasePath, vehicleData.Vin, serializedData, key); err != nil {
+				if err := backupLocally(service.LocalBasePath, vehicleData.Vin, serializedData, createdAt); err != nil {
 					log.Printf("Failed to backup vehicle data locally: %v", err)
 				}
 			}
@@ -741,6 +717,56 @@ func loadExistingS3Data(service *Service) error {
 	}
 
 	log.Println("Completed loading existing S3 data.")
+	return nil
+}
+
+// initializeS3 sets up the AWS S3 client if enabled
+func initializeS3(service *Service, s3Config *S3Config) error {
+	if s3Config != nil && s3Config.Enabled {
+		s3Client, err := configureS3(s3Config)
+		if err != nil {
+			return fmt.Errorf("failed to configure S3: %w", err)
+		}
+		service.S3Client = s3Client
+
+		if err := testS3Connection(s3Client, s3Config.Bucket); err != nil {
+			return fmt.Errorf("S3 connection test failed: %w", err)
+		}
+		log.Println("S3 connection established successfully.")
+	} else {
+		log.Println("AWS S3 uploads are disabled.")
+	}
+	return nil
+}
+
+// initializeKafka sets up the Kafka consumer
+func initializeKafka(service *Service, kafkaCfg KafkaConfig) error {
+	consumer, err := configureKafka(kafkaCfg)
+	if err != nil {
+		return fmt.Errorf("failed to configure Kafka consumer: %w", err)
+	}
+	service.KafkaConsumer = consumer
+	return nil
+}
+
+// initializePostgreSQL sets up the PostgreSQL connection if enabled
+func initializePostgreSQL(service *Service, pgConfig *PostgreSQLConfig) error {
+	if pgConfig != nil && pgConfig.Enabled {
+		db, err := configurePostgreSQL(pgConfig)
+		if err != nil {
+			return fmt.Errorf("failed to configure PostgreSQL: %w", err)
+		}
+		service.DB = db
+		log.Println("PostgreSQL connection established successfully.")
+
+		// Create table if it doesn't exist
+		if err := createTelemetryTable(db); err != nil {
+			return fmt.Errorf("failed to create telemetry table: %w", err)
+		}
+		log.Println("Telemetry table is ready.")
+	} else {
+		log.Println("PostgreSQL storage is disabled.")
+	}
 	return nil
 }
 
