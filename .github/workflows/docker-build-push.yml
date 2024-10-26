@@ -32,7 +32,7 @@ jobs:
 
       - name: Build Docker Image
         run: docker build . -t fleet-telemetry-consumer:${{ env.image_tag }}
-          
+
       - name: Tag Docker Image (only if pushing)
         if: startsWith(github.ref, 'refs/tags/')
         run: docker tag fleet-telemetry-consumer:${{ env.image_tag }} quay.io/rajsinghcpre/fleet-telemetry-consumer:${{ env.image_tag }}
@@ -40,15 +40,3 @@ jobs:
       - name: Push Docker Image (only if pushing)
         if: startsWith(github.ref, 'refs/tags/')
         run: docker push quay.io/rajsinghcpre/fleet-telemetry-consumer:${{ env.image_tag }}
-
-      - name: Update Deployment Image Tag (only if pushing)
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          sed -i "s|quay.io/rajsinghcpre/fleet-telemetry-consumer:.*|quay.io/rajsinghcpre/fleet-telemetry-consumer:${{ env.image_tag }}|" kustomization/fleet-telemetry-consumer/deployment.yaml
-
-      - name: Commit and Push Changes (only if pushing)
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: stefanzweifel/git-auto-commit-action@v4
-        with:
-          commit_message: "Update image tag to ${{ env.image_tag }}"
-          file_pattern: kustomization/fleet-telemetry-consumer/deployment.yaml
