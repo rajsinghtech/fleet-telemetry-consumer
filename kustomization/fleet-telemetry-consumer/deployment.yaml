@@ -15,15 +15,68 @@ spec:
     spec:
       containers:
         - name: fleet-telemetry-consumer
-          image: quay.io/rajsinghcpre/fleet-telemetry-consumer:v0.0.14
-          command: ["/fleet-telemetry-consumer", "-config", "/etc/fleet-telemetry-consumer/config.json"]
+          image: quay.io/rajsinghcpre/fleet-telemetry-consumer:v0.0.15
+          # Removed the command that uses the config file
           volumeMounts:
-            - name: config-volume
-              mountPath: /etc/fleet-telemetry-consumer
+            - name: data
+              mountPath: /data
           ports:
             - containerPort: 2112
               name: metrics
+          env:
+            # Kafka Configuration
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: "tesla-kafka-bootstrap.tesla:9092"
+            - name: KAFKA_GROUP_ID
+              value: "fleet-telemetry-consumer"
+            - name: KAFKA_AUTO_OFFSET_RESET
+              value: "earliest"
+            - name: KAFKA_TOPIC
+              value: "tesla_V"
+            # AWS S3 Configuration
+            - name: AWS_ENABLED
+              value: "true"
+            - name: AWS_BUCKET_PROTOCOL
+              value: "http"
+            - name: AWS_BUCKET_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: ceph-tesla
+                  key: BUCKET_HOST
+            - name: AWS_BUCKET_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: ceph-tesla
+                  key: BUCKET_PORT
+            - name: AWS_BUCKET_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: ceph-tesla
+                  key: BUCKET_NAME
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: ceph-tesla
+                  key: AWS_ACCESS_KEY_ID
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ceph-tesla
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: AWS_BUCKET_REGION
+              value: us-east-1
+              # valueFrom:
+              #   configMapKeyRef:
+              #     name: ceph-tesla
+              #     key: BUCKET_REGION
+            # Local Backup Configuration
+            - name: LOCAL_ENABLED
+              value: "false"
+            - name: LOCAL_BASE_PATH
+              value: "/data"
+            # Prometheus Configuration
+            - name: PROMETHEUS_ADDR
+              value: ":2112"
       volumes:
-        - name: config-volume
-          configMap:
-            name: fleet-telemetry-consumer-config
+        - name: data
+          emptyDir: {}
