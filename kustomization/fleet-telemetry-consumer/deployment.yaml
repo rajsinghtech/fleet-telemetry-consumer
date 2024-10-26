@@ -105,6 +105,8 @@ spec:
                   key: dbname
             - name: POSTGRES_SSLMODE
               value: "disable"
+            - name: POSTGRES_ENABLED
+              value: "true"
       volumes:
         - name: data
           emptyDir: {}
