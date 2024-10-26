@@ -36,6 +36,7 @@ type Config struct {
 	AWS         *S3Config
 	Local       *LocalConfig
 	PostgreSQL  *PostgreSQLConfig
+	LoadDays    int // New field to specify the number of days to load
 }
 
 // S3Config holds AWS S3 configuration
@@ -352,6 +353,14 @@ func loadConfigFromEnv() (Config, error) {
 		}
 	}
 
+	// LoadDays configuration
+	loadDaysStr := os.Getenv("LOAD_DAYS")
+	loadDays, err := strconv.Atoi(loadDaysStr)
+	if err != nil || loadDays <= 0 {
+		loadDays = 7 // Default to 7 days if not set or invalid
+	}
+	cfg.LoadDays = loadDays
+
 	return cfg, nil
 }
 
@@ -629,13 +638,17 @@ func loadExistingS3Data(service *Service) error {
 	}
 
 	bucket := service.Config.AWS.Bucket
+	loadDays := service.Config.LoadDays
+
+	// Calculate the cutoff date
+	cutoffDate := time.Now().AddDate(0, 0, -loadDays)
 
 	// List all .pb objects in the bucket
 	listInput := &s3.ListObjectsV2Input{
 		Bucket: aws.String(bucket),
 	}
 
-	log.Printf("Listing all .pb files in S3 bucket: %s", bucket)
+	log.Printf("Listing all .pb files in S3 bucket: %s for the last %d days", bucket, loadDays)
 
 	var continuationToken *string = nil
 	for {
@@ -652,6 +665,11 @@ func loadExistingS3Data(service *Service) error {
 			key := aws.StringValue(object.Key)
 			if filepath.Ext(key) != ".pb" {
 				continue // Skip non-.pb files
+			}
+
+			// Check if the object is within the loadDays range
+			if object.LastModified.Before(cutoffDate) {
+				continue
 			}
 
 			log.Printf("Processing S3 object: %s", key)

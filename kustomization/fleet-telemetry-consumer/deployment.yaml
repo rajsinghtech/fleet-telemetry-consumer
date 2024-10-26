@@ -24,6 +24,8 @@ spec:
             - containerPort: 2112
               name: metrics
           env:
+            - name: LOAD_DAYS
+              value: "10"
             # Kafka Configuration
             - name: KAFKA_BOOTSTRAP_SERVERS
               value: "tesla-kafka-bootstrap.tesla:9092"
