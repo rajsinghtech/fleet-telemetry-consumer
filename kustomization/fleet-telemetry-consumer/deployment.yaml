@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: fleet-telemetry-consumer
-          image: quay.io/rajsinghcpre/fleet-telemetry-consumer:v0.0.15
+          image: quay.io/rajsinghcpre/fleet-telemetry-consumer:v0.0.16
           # Removed the command that uses the config file
           volumeMounts:
             - name: data
@@ -64,7 +64,7 @@ spec:
                   name: ceph-tesla
                   key: AWS_SECRET_ACCESS_KEY
             - name: AWS_BUCKET_REGION
-              value: us-east-1
+              value: "us-east-1"
               # valueFrom:
               #   configMapKeyRef:
               #     name: ceph-tesla
@@ -77,6 +77,34 @@ spec:
             # Prometheus Configuration
             - name: PROMETHEUS_ADDR
               value: ":2112"
+            # PostgreSQL Configuration
+            - name: POSTGRES_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-app
+                  key: host
+            - name: POSTGRES_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-app
+                  key: port
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-app
+                  key: user
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-app
+                  key: password
+            - name: POSTGRES_DBNAME
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-app
+                  key: dbname
+            - name: POSTGRES_SSLMODE
+              value: "disable"
       volumes:
         - name: data
           emptyDir: {}

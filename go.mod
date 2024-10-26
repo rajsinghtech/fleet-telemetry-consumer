@@ -5,6 +5,7 @@ go 1.22
 require (
 	github.com/aws/aws-sdk-go v1.55.5
 	github.com/confluentinc/confluent-kafka-go v1.9.2
+	github.com/lib/pq v1.10.9
 	github.com/prometheus/client_golang v1.15.0
 	github.com/teslamotors/fleet-telemetry v0.3.2
 	google.golang.org/protobuf v1.33.0

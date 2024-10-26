@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -21,6 +22,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
+	_ "github.com/lib/pq"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/protobuf/proto"
@@ -29,9 +31,10 @@ import (
 
 // Config holds the entire configuration structure
 type Config struct {
-	Kafka KafkaConfig
-	AWS   *S3Config
-	Local *LocalConfig
+	Kafka       KafkaConfig
+	AWS         *S3Config
+	Local       *LocalConfig
+	PostgreSQL  *PostgreSQLConfig
 }
 
 // S3Config holds AWS S3 configuration
@@ -60,6 +63,17 @@ type KafkaConfig struct {
 	Topic            string
 }
 
+// PostgreSQLConfig holds PostgreSQL configuration
+type PostgreSQLConfig struct {
+	Enabled  bool
+	Host     string
+	Port     int
+	User     string
+	Password string
+	DBName   string
+	SSLMode  string
+}
+
 // Service encapsulates the application's dependencies
 type Service struct {
 	Config             Config
@@ -68,6 +82,7 @@ type Service struct {
 	LocalBasePath      string
 	KafkaConsumer      *kafka.Consumer
 	PrometheusMetrics  *Metrics
+	DB                 *sql.DB
 }
 
 // Metrics holds all Prometheus metrics
@@ -112,6 +127,24 @@ func NewService(cfg Config) (*Service, error) {
 		return nil, fmt.Errorf("failed to configure Kafka consumer: %w", err)
 	}
 	service.KafkaConsumer = consumer
+
+	// Initialize PostgreSQL if enabled
+	if cfg.PostgreSQL != nil && cfg.PostgreSQL.Enabled {
+		db, err := configurePostgreSQL(cfg.PostgreSQL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to configure PostgreSQL: %w", err)
+		}
+		service.DB = db
+		log.Println("PostgreSQL connection established successfully.")
+
+		// Create table if it doesn't exist
+		if err := createTelemetryTable(db); err != nil {
+			return nil, fmt.Errorf("failed to create telemetry table: %w", err)
+		}
+		log.Println("Telemetry table is ready.")
+	} else {
+		log.Println("PostgreSQL storage is disabled.")
+	}
 
 	return service, nil
 }
@@ -209,6 +242,48 @@ func configureKafka(kafkaCfg KafkaConfig) (*kafka.Consumer, error) {
 	return consumer, nil
 }
 
+// configurePostgreSQL sets up the PostgreSQL connection
+func configurePostgreSQL(pgConfig *PostgreSQLConfig) (*sql.DB, error) {
+	connStr := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
+		pgConfig.Host,
+		pgConfig.Port,
+		pgConfig.User,
+		pgConfig.Password,
+		pgConfig.DBName,
+		pgConfig.SSLMode,
+	)
+
+	db, err := sql.Open("postgres", connStr)
+	if err != nil {
+		return nil, fmt.Errorf("unable to open PostgreSQL connection: %w", err)
+	}
+
+	// Verify the connection
+	if err := db.Ping(); err != nil {
+		return nil, fmt.Errorf("unable to verify PostgreSQL connection: %w", err)
+	}
+
+	return db, nil
+}
+
+// createTelemetryTable creates the telemetry_data table if it does not exist
+func createTelemetryTable(db *sql.DB) error {
+	createTableQuery := `
+	CREATE TABLE IF NOT EXISTS telemetry_data (
+		id SERIAL PRIMARY KEY,
+		vin TEXT,
+		key INTEGER,
+		value JSONB,
+		created_at TIMESTAMPTZ
+	);
+	`
+	_, err := db.Exec(createTableQuery)
+	if err != nil {
+		return fmt.Errorf("failed to create telemetry_data table: %w", err)
+	}
+	return nil
+}
+
 // loadConfigFromEnv reads and validates the configuration from environment variables
 func loadConfigFromEnv() (Config, error) {
 	var cfg Config
@@ -264,26 +339,46 @@ func loadConfigFromEnv() (Config, error) {
 		}
 	}
 
+	// PostgreSQL configuration
+	pgEnabledStr := os.Getenv("POSTGRES_ENABLED")
+	pgEnabled, err := strconv.ParseBool(pgEnabledStr)
+	if err != nil {
+		pgEnabled = false
+	}
+	if pgEnabled {
+		portStr := os.Getenv("POSTGRES_PORT")
+		port, err := strconv.Atoi(portStr)
+		if err != nil {
+			port = 5432 // default PostgreSQL port
+		}
+
+		cfg.PostgreSQL = &PostgreSQLConfig{
+			Enabled:  true,
+			Host:     os.Getenv("POSTGRES_HOST"),
+			Port:     port,
+			User:     os.Getenv("POSTGRES_USER"),
+			Password: os.Getenv("POSTGRES_PASSWORD"),
+			DBName:   os.Getenv("POSTGRES_DBNAME"),
+			SSLMode:  os.Getenv("POSTGRES_SSLMODE"),
+		}
+		if cfg.PostgreSQL.Host == "" || cfg.PostgreSQL.User == "" || cfg.PostgreSQL.Password == "" || cfg.PostgreSQL.DBName == "" {
+			return cfg, fmt.Errorf("incomplete PostgreSQL configuration")
+		}
+		if cfg.PostgreSQL.SSLMode == "" {
+			cfg.PostgreSQL.SSLMode = "disable"
+		}
+	}
+
 	return cfg, nil
 }
 
-// uploadToS3 uploads JSON data to the specified S3 bucket with a vin/year/month/day key structure
-func uploadToS3(s3Svc *s3.S3, bucket, vin string, data []byte) error {
-	now := time.Now().UTC()
-	key := fmt.Sprintf("%s/%04d/%02d/%02d/%04d%02d%02dT%02d%02d%02d.%06dZ.json",
-		vin,
-		now.Year(),
-		now.Month(),
-		now.Day(),
-		now.Year(), now.Month(), now.Day(),
-		now.Hour(), now.Minute(), now.Second(), now.Nanosecond()/1000,
-	)
-
+// uploadToS3 uploads Protobuf data to the specified S3 bucket with a vin/year/month/day key structure
+func uploadToS3(s3Svc *s3.S3, bucket, vin string, data []byte, key string) error {
 	input := &s3.PutObjectInput{
 		Bucket:      aws.String(bucket),
 		Key:         aws.String(key),
 		Body:        bytes.NewReader(data),
-		ContentType: aws.String("application/json"),
+		ContentType: aws.String("application/x-protobuf"),
 	}
 
 	_, err := s3Svc.PutObject(input)
@@ -295,23 +390,23 @@ func uploadToS3(s3Svc *s3.S3, bucket, vin string, data []byte) error {
 	return nil
 }
 
-// backupLocally saves JSON data to the local filesystem with a vin/year/month/day folder structure
-func backupLocally(basePath, vin string, data []byte) error {
-	now := time.Now().UTC()
+// backupLocally saves Protobuf data to the local filesystem with a vin/year/month/day folder structure
+func backupLocally(basePath, vin string, data []byte, key string) error {
+	// Extract the filename from the key
+	fileName := filepath.Base(key)
+
+	// Create the directories as per the existing structure
 	dirPath := filepath.Join(basePath,
 		vin,
-		fmt.Sprintf("%04d", now.Year()),
-		fmt.Sprintf("%02d", now.Month()),
-		fmt.Sprintf("%02d", now.Day()),
+		fmt.Sprintf("%04d", time.Now().UTC().Year()),
+		fmt.Sprintf("%02d", time.Now().UTC().Month()),
+		fmt.Sprintf("%02d", time.Now().UTC().Day()),
 	)
 	if err := os.MkdirAll(dirPath, os.ModePerm); err != nil {
 		return fmt.Errorf("failed to create directories '%s': %w", dirPath, err)
 	}
 
-	fileName := fmt.Sprintf("%04d%02d%02dT%02d%02d%02d.%06dZ.json",
-		now.Year(), now.Month(), now.Day(),
-		now.Hour(), now.Minute(), now.Second(), now.Nanosecond()/1000)
-
+	// Full file path
 	filePath := filepath.Join(dirPath, fileName)
 	if err := os.WriteFile(filePath, data, 0644); err != nil {
 		return fmt.Errorf("failed to write file '%s': %w", filePath, err)
@@ -321,9 +416,35 @@ func backupLocally(basePath, vin string, data []byte) error {
 	return nil
 }
 
+// insertTelemetryData inserts telemetry data into PostgreSQL
+func insertTelemetryData(db *sql.DB, vin string, key int, value interface{}, createdAt time.Time) error {
+	insertQuery := `
+	INSERT INTO telemetry_data (vin, key, value, created_at)
+	VALUES ($1, $2, $3, $4)
+	`
+	valueJSON, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Errorf("failed to marshal value to JSON: %w", err)
+	}
+
+	_, err = db.Exec(insertQuery, vin, key, string(valueJSON), createdAt)
+	if err != nil {
+		return fmt.Errorf("failed to insert telemetry data into PostgreSQL: %w", err)
+	}
+
+	return nil
+}
+
 // processValue handles different types of Protobuf values and updates Prometheus metrics
-func processValue(datum *protos.Datum, service *Service, vin string) {
+func processValue(datum *protos.Datum, service *Service, vin string, createdAt time.Time) {
 	fieldName := datum.Key.String()
+
+	// Insert into PostgreSQL if enabled
+	if service.DB != nil {
+		if err := insertTelemetryData(service.DB, vin, int(datum.Key), datum.Value.Value, createdAt); err != nil {
+			log.Printf("PostgreSQL insert error for VIN %s, key %d: %v", vin, datum.Key, err)
+		}
+	}
 
 	switch v := datum.Value.Value.(type) {
 	case *protos.Value_StringValue:
@@ -467,28 +588,41 @@ func startConsumerLoop(service *Service, ctx context.Context, wg *sync.WaitGroup
 
 			log.Printf("Received Vehicle Data for VIN %s", vehicleData.Vin)
 
+			// Convert created_at to time.Time
+			createdAt := time.Unix(vehicleData.CreatedAt.Seconds, int64(vehicleData.CreatedAt.Nanos)).UTC()
+
 			// Process each Datum in the Payload
 			for _, datum := range vehicleData.Data {
-				processValue(datum, service, vehicleData.Vin)
+				processValue(datum, service, vehicleData.Vin, createdAt)
 			}
 
-			// Serialize data as JSON for storage
-			serializedData, err := json.Marshal(vehicleData)
+			// Serialize data as Protobuf for storage
+			serializedData, err := proto.Marshal(vehicleData)
 			if err != nil {
-				log.Printf("Failed to marshal vehicleData to JSON: %v", err)
+				log.Printf("Failed to marshal vehicleData to Protobuf: %v", err)
 				continue
 			}
 
+			// Define the key with .pb extension
+			key := fmt.Sprintf("%s/%04d/%02d/%02d/%04d%02d%02dT%02d%02d%02d.%06dZ.pb",
+				vehicleData.Vin,
+				createdAt.Year(),
+				int(createdAt.Month()),
+				createdAt.Day(),
+				createdAt.Year(), int(createdAt.Month()), createdAt.Day(),
+				createdAt.Hour(), createdAt.Minute(), createdAt.Second(), createdAt.Nanosecond()/1000,
+			)
+
 			// Upload to S3 if enabled
 			if service.S3Client != nil {
-				if err := uploadToS3(service.S3Client, service.Config.AWS.Bucket, vehicleData.Vin, serializedData); err != nil {
+				if err := uploadToS3(service.S3Client, service.Config.AWS.Bucket, vehicleData.Vin, serializedData, key); err != nil {
 					log.Printf("Failed to upload vehicle data to S3: %v", err)
 				}
 			}
 
 			// Backup locally if enabled
 			if service.LocalBackupEnabled {
-				if err := backupLocally(service.LocalBasePath, vehicleData.Vin, serializedData); err != nil {
+				if err := backupLocally(service.LocalBasePath, vehicleData.Vin, serializedData, key); err != nil {
 					log.Printf("Failed to backup vehicle data locally: %v", err)
 				}
 			}
@@ -549,6 +683,15 @@ func main() {
 		log.Printf("Error closing Kafka consumer: %v", err)
 	} else {
 		log.Println("Kafka consumer closed successfully.")
+	}
+
+	// Close PostgreSQL connection if enabled
+	if service.DB != nil {
+		if err := service.DB.Close(); err != nil {
+			log.Printf("Error closing PostgreSQL connection: %v", err)
+		} else {
+			log.Println("PostgreSQL connection closed successfully.")
+		}
 	}
 
 	// Wait for all goroutines to finish
