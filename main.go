@@ -241,164 +241,168 @@ func configurePostgreSQL(pgConfig *PostgreSQLConfig) (*sql.DB, error) {
 	return db, nil
 }
 
-// createTelemetryTable creates the telemetry_data table if it does not exist
 func createTelemetryTable(db *sql.DB) error {
-    createTableQuery := `
-    CREATE TABLE IF NOT EXISTS telemetry_data (
-        vin TEXT,
-        created_at TIMESTAMPTZ,
-        vehicle_speed DOUBLE PRECISION,
-        odometer DOUBLE PRECISION,
-        pack_voltage DOUBLE PRECISION,
-        pack_current DOUBLE PRECISION,
-        soc DOUBLE PRECISION,
-        dcdc_enable BOOLEAN,
-        gear TEXT,
-        isolation_resistance DOUBLE PRECISION,
-        pedal_position DOUBLE PRECISION,
-        brake_pedal BOOLEAN,
-        di_state_r TEXT,
-        di_heatsink_tr DOUBLE PRECISION,
-        di_axle_speed_r DOUBLE PRECISION,
-        di_torquemotor DOUBLE PRECISION,
-        di_stator_temp_r DOUBLE PRECISION,
-        di_vbat_r DOUBLE PRECISION,
-        di_motor_current_r DOUBLE PRECISION,
-        gps_state TEXT,
-        gps_heading DOUBLE PRECISION,
-        num_brick_voltage_max INTEGER,
-        brick_voltage_max DOUBLE PRECISION,
-        num_brick_voltage_min INTEGER,
-        brick_voltage_min DOUBLE PRECISION,
-        num_module_temp_max INTEGER,
-        module_temp_max DOUBLE PRECISION,
-        num_module_temp_min INTEGER,
-        module_temp_min DOUBLE PRECISION,
-        rated_range DOUBLE PRECISION,
-        hvil_status TEXT,
-        dc_charging_energy_in DOUBLE PRECISION,
-        dc_charging_power DOUBLE PRECISION,
-        ac_charging_energy_in DOUBLE PRECISION,
-        ac_charging_power DOUBLE PRECISION,
-        charge_limit_soc DOUBLE PRECISION,
-        fast_charger_present BOOLEAN,
-        est_battery_range DOUBLE PRECISION,
-        ideal_battery_range DOUBLE PRECISION,
-        battery_level INTEGER,
-        time_to_full_charge DOUBLE PRECISION,
-        scheduled_charging_start_time TIMESTAMPTZ,
-        scheduled_charging_pending BOOLEAN,
-        scheduled_departure_time TIMESTAMPTZ,
-        preconditioning_enabled BOOLEAN,
-        scheduled_charging_mode TEXT,
-        charge_amps DOUBLE PRECISION,
-        charge_enable_request BOOLEAN,
-        charger_phases INTEGER,
-        charge_port_cold_weather_mode BOOLEAN,
-        charge_current_request DOUBLE PRECISION,
-        charge_current_request_max DOUBLE PRECISION,
-        battery_heater_on BOOLEAN,
-        not_enough_power_to_heat BOOLEAN,
-        supercharger_session_trip_planner BOOLEAN,
-        door_state BOOLEAN,
-        locked BOOLEAN,
-        fd_window TEXT,
-        fp_window TEXT,
-        rd_window TEXT,
-        rp_window TEXT,
-        vehicle_name TEXT,
-        sentry_mode_state TEXT,
-        speed_limit_mode BOOLEAN,
-        current_limit_mph DOUBLE PRECISION,
-        version TEXT,
-        tpms_pressure_fl DOUBLE PRECISION,
-        tpms_pressure_fr DOUBLE PRECISION,
-        tpms_pressure_rl DOUBLE PRECISION,
-        tpms_pressure_rr DOUBLE PRECISION,
-        inside_temp DOUBLE PRECISION,
-        outside_temp DOUBLE PRECISION,
-        seat_heater_left INTEGER,
-        seat_heater_right INTEGER,
-        seat_heater_rear_left INTEGER,
-        seat_heater_rear_right INTEGER,
-        seat_heater_rear_center INTEGER,
-        auto_seat_climate_left BOOLEAN,
-        auto_seat_climate_right BOOLEAN,
-        driver_seat_belt BOOLEAN,
-        passenger_seat_belt BOOLEAN,
-        driver_seat_occupied BOOLEAN,
-        latitude DOUBLE PRECISION,
-        longitude DOUBLE PRECISION,
-        cruise_state TEXT,
-        cruise_set_speed DOUBLE PRECISION,
-        lifetime_energy_used DOUBLE PRECISION,
-        lifetime_energy_used_drive DOUBLE PRECISION,
-        brake_pedal_pos DOUBLE PRECISION,
-        route_last_updated TIMESTAMPTZ,
-        route_line TEXT,
-        miles_to_arrival DOUBLE PRECISION,
-        minutes_to_arrival DOUBLE PRECISION,
-        origin_location TEXT,
-        destination_location TEXT,
-        car_type TEXT,
-        trim TEXT,
-        exterior_color TEXT,
-        roof_color TEXT,
-        charge_port TEXT,
-        charge_port_latch TEXT,
-        guest_mode_enabled BOOLEAN,
-        pin_to_drive_enabled BOOLEAN,
-        paired_phone_key_and_key_fob_qty INTEGER,
-        cruise_follow_distance INTEGER,
-        automatic_blind_spot_camera BOOLEAN,
-        blind_spot_collision_warning_chime BOOLEAN,
-        speed_limit_warning TEXT,
-        forward_collision_warning TEXT,
-        lane_departure_avoidance TEXT,
-        emergency_lane_departure_avoidance BOOLEAN,
-        automatic_emergency_braking_off BOOLEAN,
-        lifetime_energy_gained_regen DOUBLE PRECISION,
-        di_state_f TEXT,
-        di_state_rel TEXT,
-        di_state_rer TEXT,
-        di_heatsink_tf DOUBLE PRECISION,
-        di_heatsink_trel DOUBLE PRECISION,
-        di_heatsink_trer DOUBLE PRECISION,
-        di_axle_speed_f DOUBLE PRECISION,
-        di_axle_speed_rel DOUBLE PRECISION,
-        di_axle_speed_rer DOUBLE PRECISION,
-        di_slave_torque_cmd DOUBLE PRECISION,
-        di_torque_actual_r DOUBLE PRECISION,
-        di_torque_actual_f DOUBLE PRECISION,
-        di_torque_actual_rel DOUBLE PRECISION,
-        di_torque_actual_rer DOUBLE PRECISION,
-        di_stator_temp_f DOUBLE PRECISION,
-        di_stator_temp_rel DOUBLE PRECISION,
-        di_stator_temp_rer DOUBLE PRECISION,
-        di_vbat_f DOUBLE PRECISION,
-        di_vbat_rel DOUBLE PRECISION,
-        di_vbat_rer DOUBLE PRECISION,
-        di_motor_current_f DOUBLE PRECISION,
-        di_motor_current_rel DOUBLE PRECISION,
-        di_motor_current_rer DOUBLE PRECISION,
-        energy_remaining DOUBLE PRECISION,
-        service_mode BOOLEAN,
-        bms_state TEXT,
-        guest_mode_mobile_access_state TEXT,
-        destination_name TEXT,
-        di_inverter_tr DOUBLE PRECISION,
-        di_inverter_tf DOUBLE PRECISION,
-        di_inverter_trel DOUBLE PRECISION,
-        di_inverter_trer DOUBLE PRECISION,
-        detailed_charge_state TEXT
-        -- Add other fields as needed
-    );
-    `
-    _, err := db.Exec(createTableQuery)
-    if err != nil {
-        return fmt.Errorf("failed to create telemetry_data table: %w", err)
-    }
-    return nil
+	createTableQuery := `
+	CREATE TABLE IF NOT EXISTS telemetry_data (
+		vin TEXT,
+		created_at TIMESTAMPTZ,
+		vehicle_speed DOUBLE PRECISION,
+		odometer DOUBLE PRECISION,
+		pack_voltage DOUBLE PRECISION,
+		pack_current DOUBLE PRECISION,
+		soc DOUBLE PRECISION,
+		dcdc_enable BOOLEAN,
+		gear TEXT,
+		isolation_resistance DOUBLE PRECISION,
+		pedal_position DOUBLE PRECISION,
+		brake_pedal BOOLEAN,
+		di_state_r TEXT,
+		di_heatsink_tr DOUBLE PRECISION,
+		di_axle_speed_r DOUBLE PRECISION,
+		di_torquemotor DOUBLE PRECISION,
+		di_stator_temp_r DOUBLE PRECISION,
+		di_vbat_r DOUBLE PRECISION,
+		di_motor_current_r DOUBLE PRECISION,
+		gps_state TEXT,
+		gps_heading DOUBLE PRECISION,
+		num_brick_voltage_max INTEGER,
+		brick_voltage_max DOUBLE PRECISION,
+		num_brick_voltage_min INTEGER,
+		brick_voltage_min DOUBLE PRECISION,
+		num_module_temp_max INTEGER,
+		module_temp_max DOUBLE PRECISION,
+		num_module_temp_min INTEGER,
+		module_temp_min DOUBLE PRECISION,
+		rated_range DOUBLE PRECISION,
+		hvil_status TEXT,
+		dc_charging_energy_in DOUBLE PRECISION,
+		dc_charging_power DOUBLE PRECISION,
+		ac_charging_energy_in DOUBLE PRECISION,
+		ac_charging_power DOUBLE PRECISION,
+		charge_limit_soc DOUBLE PRECISION,
+		fast_charger_present BOOLEAN,
+		est_battery_range DOUBLE PRECISION,
+		ideal_battery_range DOUBLE PRECISION,
+		battery_level INTEGER,
+		time_to_full_charge DOUBLE PRECISION,
+		scheduled_charging_start_time TIMESTAMPTZ,
+		scheduled_charging_pending BOOLEAN,
+		scheduled_departure_time TIMESTAMPTZ,
+		preconditioning_enabled BOOLEAN,
+		scheduled_charging_mode TEXT,
+		charge_amps DOUBLE PRECISION,
+		charge_enable_request BOOLEAN,
+		charger_phases INTEGER,
+		charge_port_cold_weather_mode BOOLEAN,
+		charge_current_request DOUBLE PRECISION,
+		charge_current_request_max DOUBLE PRECISION,
+		battery_heater_on BOOLEAN,
+		not_enough_power_to_heat BOOLEAN,
+		supercharger_session_trip_planner BOOLEAN,
+		door_state BOOLEAN,
+		locked BOOLEAN,
+		fd_window TEXT,
+		fp_window TEXT,
+		rd_window TEXT,
+		rp_window TEXT,
+		driver_front_door BOOLEAN,
+		passenger_front_door BOOLEAN,
+		driver_rear_door BOOLEAN,
+		passenger_rear_door BOOLEAN,
+		trunk_front BOOLEAN,
+		trunk_rear BOOLEAN,
+		vehicle_name TEXT,
+		sentry_mode_state TEXT,
+		speed_limit_mode BOOLEAN,
+		current_limit_mph DOUBLE PRECISION,
+		version TEXT,
+		tpms_pressure_fl DOUBLE PRECISION,
+		tpms_pressure_fr DOUBLE PRECISION,
+		tpms_pressure_rl DOUBLE PRECISION,
+		tpms_pressure_rr DOUBLE PRECISION,
+		inside_temp DOUBLE PRECISION,
+		outside_temp DOUBLE PRECISION,
+		seat_heater_left INTEGER,
+		seat_heater_right INTEGER,
+		seat_heater_rear_left INTEGER,
+		seat_heater_rear_right INTEGER,
+		seat_heater_rear_center INTEGER,
+		auto_seat_climate_left BOOLEAN,
+		auto_seat_climate_right BOOLEAN,
+		driver_seat_belt BOOLEAN,
+		passenger_seat_belt BOOLEAN,
+		driver_seat_occupied BOOLEAN,
+		latitude DOUBLE PRECISION,
+		longitude DOUBLE PRECISION,
+		cruise_state TEXT,
+		cruise_set_speed DOUBLE PRECISION,
+		lifetime_energy_used DOUBLE PRECISION,
+		lifetime_energy_used_drive DOUBLE PRECISION,
+		brake_pedal_pos DOUBLE PRECISION,
+		route_last_updated TIMESTAMPTZ,
+		route_line TEXT,
+		miles_to_arrival DOUBLE PRECISION,
+		minutes_to_arrival DOUBLE PRECISION,
+		origin_location TEXT,
+		destination_location TEXT,
+		car_type TEXT,
+		trim TEXT,
+		exterior_color TEXT,
+		roof_color TEXT,
+		charge_port TEXT,
+		charge_port_latch TEXT,
+		guest_mode_enabled BOOLEAN,
+		pin_to_drive_enabled BOOLEAN,
+		paired_phone_key_and_key_fob_qty INTEGER,
+		cruise_follow_distance INTEGER,
+		automatic_blind_spot_camera BOOLEAN,
+		blind_spot_collision_warning_chime BOOLEAN,
+		speed_limit_warning TEXT,
+		forward_collision_warning TEXT,
+		lane_departure_avoidance TEXT,
+		emergency_lane_departure_avoidance BOOLEAN,
+		automatic_emergency_braking_off BOOLEAN,
+		lifetime_energy_gained_regen DOUBLE PRECISION,
+		di_state_f TEXT,
+		di_state_rel TEXT,
+		di_state_rer TEXT,
+		di_heatsink_tf DOUBLE PRECISION,
+		di_heatsink_trel DOUBLE PRECISION,
+		di_heatsink_trer DOUBLE PRECISION,
+		di_axle_speed_f DOUBLE PRECISION,
+		di_axle_speed_rel DOUBLE PRECISION,
+		di_axle_speed_rer DOUBLE PRECISION,
+		di_slave_torque_cmd DOUBLE PRECISION,
+		di_torque_actual_r DOUBLE PRECISION,
+		di_torque_actual_f DOUBLE PRECISION,
+		di_torque_actual_rel DOUBLE PRECISION,
+		di_torque_actual_rer DOUBLE PRECISION,
+		di_stator_temp_f DOUBLE PRECISION,
+		di_stator_temp_rel DOUBLE PRECISION,
+		di_stator_temp_rer DOUBLE PRECISION,
+		di_vbat_f DOUBLE PRECISION,
+		di_vbat_rel DOUBLE PRECISION,
+		di_vbat_rer DOUBLE PRECISION,
+		di_motor_current_f DOUBLE PRECISION,
+		di_motor_current_rel DOUBLE PRECISION,
+		di_motor_current_rer DOUBLE PRECISION,
+		energy_remaining DOUBLE PRECISION,
+		service_mode BOOLEAN,
+		bms_state TEXT,
+		guest_mode_mobile_access_state TEXT,
+		destination_name TEXT,
+		di_inverter_tr DOUBLE PRECISION,
+		di_inverter_tf DOUBLE PRECISION,
+		di_inverter_trel DOUBLE PRECISION,
+		di_inverter_trer DOUBLE PRECISION,
+		detailed_charge_state TEXT
+	);
+	`
+	_, err := db.Exec(createTableQuery)
+	if err != nil {
+		return fmt.Errorf("failed to create telemetry_data table: %w", err)
+	}
+	return nil
 }
 
 // loadConfigFromEnv reads and validates the configuration from environment variables
@@ -621,6 +625,12 @@ func insertTelemetryData(db *sql.DB, payload *protos.Payload) error {
         fp_window,
         rd_window,
         rp_window,
+        driver_front_door,
+        passenger_front_door,
+        driver_rear_door,
+        passenger_rear_door,
+        trunk_front,
+        trunk_rear,
         vehicle_name,
         sentry_mode_state,
         speed_limit_mode,
@@ -703,13 +713,7 @@ func insertTelemetryData(db *sql.DB, payload *protos.Payload) error {
         di_inverter_tf,
         di_inverter_trel,
         di_inverter_trer,
-        detailed_charge_state,
-        driver_front_door,
-        passenger_front_door,
-        driver_rear_door,
-        passenger_rear_door,
-        trunk_front,
-        trunk_rear
+        detailed_charge_state
     ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
         $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
@@ -797,6 +801,12 @@ func insertTelemetryData(db *sql.DB, payload *protos.Payload) error {
         fpWindow                          sql.NullString
         rdWindow                          sql.NullString
         rpWindow                          sql.NullString
+        driverFrontDoor                   sql.NullBool
+        passengerFrontDoor                sql.NullBool
+        driverRearDoor                    sql.NullBool
+        passengerRearDoor                 sql.NullBool
+        trunkFront                        sql.NullBool
+        trunkRear                         sql.NullBool
         vehicleName                       sql.NullString
         sentryModeState                   sql.NullString
         speedLimitMode                    sql.NullBool
@@ -847,45 +857,39 @@ func insertTelemetryData(db *sql.DB, payload *protos.Payload) error {
         emergencyLaneDepartureAvoidance   sql.NullBool
         automaticEmergencyBrakingOff      sql.NullBool
         lifetimeEnergyGainedRegen         sql.NullFloat64
-        diStateF                          sql.NullString
-        diStateREL                        sql.NullString
-        diStateRER                        sql.NullString
-        diHeatsinkTF                      sql.NullFloat64
-        diHeatsinkTREL                    sql.NullFloat64
-        diHeatsinkTRER                    sql.NullFloat64
-        diAxleSpeedF                      sql.NullFloat64
-        diAxleSpeedREL                    sql.NullFloat64
-        diAxleSpeedRER                    sql.NullFloat64
-        diSlaveTorqueCmd                  sql.NullFloat64
-        diTorqueActualR                   sql.NullFloat64
-        diTorqueActualF                   sql.NullFloat64
-        diTorqueActualREL                 sql.NullFloat64
-        diTorqueActualRER                 sql.NullFloat64
-        diStatorTempF                     sql.NullFloat64
-        diStatorTempREL                   sql.NullFloat64
-        diStatorTempRER                   sql.NullFloat64
-        diVBatF                           sql.NullFloat64
-        diVBatREL                         sql.NullFloat64
-        diVBatRER                         sql.NullFloat64
-        diMotorCurrentF                   sql.NullFloat64
-        diMotorCurrentREL                 sql.NullFloat64
-        diMotorCurrentRER                 sql.NullFloat64
+        di_state_f                         sql.NullString
+        di_state_rel                       sql.NullString
+        di_state_rer                       sql.NullString
+        di_heatsink_tf                     sql.NullFloat64
+        di_heatsink_trel                   sql.NullFloat64
+        di_heatsink_trer                   sql.NullFloat64
+        di_axle_speed_f                    sql.NullFloat64
+        di_axle_speed_rel                  sql.NullFloat64
+        di_axle_speed_rer                  sql.NullFloat64
+        di_slave_torque_cmd                sql.NullFloat64
+        di_torque_actual_r                 sql.NullFloat64
+        di_torque_actual_f                 sql.NullFloat64
+        di_torque_actual_rel               sql.NullFloat64
+        di_torque_actual_rer               sql.NullFloat64
+        di_stator_temp_f                   sql.NullFloat64
+        di_stator_temp_rel                 sql.NullFloat64
+        di_stator_temp_rer                 sql.NullFloat64
+        di_vbat_f                         sql.NullFloat64
+        di_vbat_rel                       sql.NullFloat64
+        di_vbat_rer                       sql.NullFloat64
+        di_motor_current_f                 sql.NullFloat64
+        di_motor_current_rel               sql.NullFloat64
+        di_motor_current_rer               sql.NullFloat64
         energyRemaining                   sql.NullFloat64
         serviceMode                       sql.NullBool
         bmsState                          sql.NullString
         guestModeMobileAccessState        sql.NullString
         destinationName                   sql.NullString
-        diInverterTR                      sql.NullFloat64
-        diInverterTF                      sql.NullFloat64
-        diInverterTREL                    sql.NullFloat64
-        diInverterTRER                    sql.NullFloat64
+        di_inverter_tr                    sql.NullFloat64
+        di_inverter_tf                    sql.NullFloat64
+        di_inverter_trel                  sql.NullFloat64
+        di_inverter_trer                  sql.NullFloat64
         detailedChargeState               sql.NullString
-		driverFrontDoor                   sql.NullBool
-		passengerFrontDoor                sql.NullBool
-		driverRearDoor                    sql.NullBool
-		passengerRearDoor                 sql.NullBool
-		trunkFront                        sql.NullBool
-		trunkRear                         sql.NullBool
     )
 
     // Map Datum keys to variables
@@ -905,10 +909,10 @@ func insertTelemetryData(db *sql.DB, payload *protos.Payload) error {
             if v, ok := value.GetValue().(*protos.Value_DoubleValue); ok {
                 packVoltage = sql.NullFloat64{Float64: v.DoubleValue}
             }
-		case protos.Field_DiAxleSpeedR:
-			if v, ok := value.GetValue().(*protos.Value_DoubleValue); ok {
-				diAxleSpeedR = sql.NullFloat64{Float64: v.DoubleValue}
-			}
+        case protos.Field_DiAxleSpeedR:
+            if v, ok := value.GetValue().(*protos.Value_DoubleValue); ok {
+                diAxleSpeedR = sql.NullFloat64{Float64: v.DoubleValue}
+            }
         case protos.Field_PackCurrent:
             if v, ok := value.GetValue().(*protos.Value_DoubleValue); ok {
                 packCurrent = sql.NullFloat64{Float64: v.DoubleValue}
@@ -956,22 +960,22 @@ func insertTelemetryData(db *sql.DB, payload *protos.Payload) error {
                 detailedChargeStateEnum := v.DetailedChargeStateValue
                 detailedChargeState = sql.NullString{String: detailedChargeStateEnum.String()}
             }
-        // Continue mapping for each field
         case protos.Field_Location:
             if v, ok := value.GetValue().(*protos.Value_LocationValue); ok {
                 latitude = sql.NullFloat64{Float64: v.LocationValue.GetLatitude()}
                 longitude = sql.NullFloat64{Float64: v.LocationValue.GetLongitude()}
             }
-		case protos.Field_DoorState:
-			if v, ok := value.GetValue().(*protos.Value_DoorValue); ok {
-				doors := v.DoorValue
-				driverFrontDoor = sql.NullBool{Bool: doors.DriverFront}
-				passengerFrontDoor = sql.NullBool{Bool: doors.PassengerFront}
-				driverRearDoor = sql.NullBool{Bool: doors.DriverRear}
-				passengerRearDoor = sql.NullBool{Bool: doors.PassengerRear}
-				trunkFront = sql.NullBool{Bool: doors.TrunkFront}
-				trunkRear = sql.NullBool{Bool: doors.TrunkRear}
-			}
+        case protos.Field_DoorState:
+            if v, ok := value.GetValue().(*protos.Value_DoorValue); ok {
+                doors := v.DoorValue
+                driverFrontDoor = sql.NullBool{Bool: doors.DriverFront}
+                passengerFrontDoor = sql.NullBool{Bool: doors.PassengerFront}
+                driverRearDoor = sql.NullBool{Bool: doors.DriverRear}
+                passengerRearDoor = sql.NullBool{Bool: doors.PassengerRear}
+                trunkFront = sql.NullBool{Bool: doors.TrunkFront}
+                trunkRear = sql.NullBool{Bool: doors.TrunkRear}
+            }
+        // Continue mapping for each additional field as defined in your .proto
         default:
             // Handle unknown fields if necessary
         }
@@ -1042,6 +1046,12 @@ func insertTelemetryData(db *sql.DB, payload *protos.Payload) error {
         fpWindow.String,
         rdWindow.String,
         rpWindow.String,
+        driverFrontDoor.Bool,
+        passengerFrontDoor.Bool,
+        driverRearDoor.Bool,
+        passengerRearDoor.Bool,
+        trunkFront.Bool,
+        trunkRear.Bool,
         vehicleName.String,
         sentryModeState.String,
         speedLimitMode.Bool,
@@ -1092,45 +1102,39 @@ func insertTelemetryData(db *sql.DB, payload *protos.Payload) error {
         emergencyLaneDepartureAvoidance.Bool,
         automaticEmergencyBrakingOff.Bool,
         lifetimeEnergyGainedRegen.Float64,
-        diStateF.String,
-        diStateREL.String,
-        diStateRER.String,
-        diHeatsinkTF.Float64,
-        diHeatsinkTREL.Float64,
-        diHeatsinkTRER.Float64,
-        diAxleSpeedF.Float64,
-        diAxleSpeedREL.Float64,
-        diAxleSpeedRER.Float64,
-        diSlaveTorqueCmd.Float64,
-        diTorqueActualR.Float64,
-        diTorqueActualF.Float64,
-        diTorqueActualREL.Float64,
-        diTorqueActualRER.Float64,
-        diStatorTempF.Float64,
-        diStatorTempREL.Float64,
-        diStatorTempRER.Float64,
-        diVBatF.Float64,
-        diVBatREL.Float64,
-        diVBatRER.Float64,
-        diMotorCurrentF.Float64,
-        diMotorCurrentREL.Float64,
-        diMotorCurrentRER.Float64,
+        di_state_f.String,
+        di_state_rel.String,
+        di_state_rer.String,
+        di_heatsink_tf.Float64,
+        di_heatsink_trel.Float64,
+        di_heatsink_trer.Float64,
+        di_axle_speed_f.Float64,
+        di_axle_speed_rel.Float64,
+        di_axle_speed_rer.Float64,
+        di_slave_torque_cmd.Float64,
+        di_torque_actual_r.Float64,
+        di_torque_actual_f.Float64,
+        di_torque_actual_rel.Float64,
+        di_torque_actual_rer.Float64,
+        di_stator_temp_f.Float64,
+        di_stator_temp_rel.Float64,
+        di_stator_temp_rer.Float64,
+        di_vbat_f.Float64,
+        di_vbat_rel.Float64,
+        di_vbat_rer.Float64,
+        di_motor_current_f.Float64,
+        di_motor_current_rel.Float64,
+        di_motor_current_rer.Float64,
         energyRemaining.Float64,
         serviceMode.Bool,
         bmsState.String,
         guestModeMobileAccessState.String,
         destinationName.String,
-        diInverterTR.Float64,
-        diInverterTF.Float64,
-        diInverterTREL.Float64,
-        diInverterTRER.Float64,
+        di_inverter_tr.Float64,
+        di_inverter_tf.Float64,
+        di_inverter_trel.Float64,
+        di_inverter_trer.Float64,
         detailedChargeState.String,
-		driverFrontDoor.Bool,
-		passengerFrontDoor.Bool,
-		driverRearDoor.Bool,
-		passengerRearDoor.Bool,
-		trunkFront.Bool,
-		trunkRear.Bool,
     )
     if err != nil {
         return fmt.Errorf("failed to insert telemetry data: %w", err)
