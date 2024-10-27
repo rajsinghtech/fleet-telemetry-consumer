@@ -4,7 +4,7 @@ metadata:
   name: fleet-telemetry-consumer
   namespace: tesla
 spec:
-  replicas: 3
+  replicas: 1
   selector:
     matchLabels:
       app: fleet-telemetry-consumer
@@ -25,7 +25,7 @@ spec:
               name: metrics
           env:
             - name: LOAD_DAYS
-              value: "10"
+              value: "1"
             # Kafka Configuration
             - name: KAFKA_BOOTSTRAP_SERVERS
               value: "tesla-kafka-bootstrap.tesla:9092"
