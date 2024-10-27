@@ -16,7 +16,7 @@ import (
 	"syscall"
 	"time"
 	"encoding/json"
-
+	"math"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -648,6 +648,54 @@ func insertTelemetryData(db *sql.DB, vin string, datum *protos.Datum, createdAt 
     return nil
 }
 
+func mapCruiseStateString(value string) float64 {
+    switch value {
+    case "Unknown":
+        return 0
+    case "Off":
+        return 1
+    case "Standby":
+        return 2
+    case "On":
+        return 3
+    case "Standstill":
+        return 4
+    case "Override":
+        return 5
+    case "Fault":
+        return 6
+    case "PreFault":
+        return 7
+    case "PreCancel":
+        return 8
+    default:
+        log.Printf("Unhandled CruiseState string value '%s'", value)
+        return 0 // Default to Unknown
+    }
+}
+
+func mapChargingStateString(value string) float64 {
+    switch value {
+    case "ChargeStateUnknown":
+        return 0
+    case "ChargeStateDisconnected":
+        return 1
+    case "ChargeStateNoPower":
+        return 2
+    case "ChargeStateStarting":
+        return 3
+    case "ChargeStateCharging":
+        return 4
+    case "ChargeStateComplete":
+        return 5
+    case "ChargeStateStopped":
+        return 6
+    default:
+        log.Printf("Unhandled ChargingState string value '%s'", value)
+        return 0 // Default to Unknown
+    }
+}
+
 // processValue handles different types of Protobuf values and updates Prometheus metrics
 func processValue(datum *protos.Datum, service *Service, vin string, createdAt time.Time) {
 	fieldName := datum.Key.String()
@@ -662,7 +710,17 @@ func processValue(datum *protos.Datum, service *Service, vin string, createdAt t
 	// Update Prometheus metrics
 	switch v := datum.Value.Value.(type) {
 	case *protos.Value_StringValue:
-		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(1)
+		// Handle fields that should be mapped from string to numeric values
+		if fieldName == "CruiseState" {
+			cruiseStateValue := mapCruiseStateString(v.StringValue)
+			service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(cruiseStateValue)
+		} else if fieldName == "ChargingState" {
+			chargingStateValue := mapChargingStateString(v.StringValue)
+			service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(chargingStateValue)
+		} else {
+			// For other string values, you might set a label or an info metric
+			service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(1)
+		}
 	case *protos.Value_IntValue:
 		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(float64(v.IntValue))
 	case *protos.Value_LongValue:
@@ -681,9 +739,6 @@ func processValue(datum *protos.Datum, service *Service, vin string, createdAt t
 		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(float64(v.ChargingValue))
 	case *protos.Value_ShiftStateValue:
 		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(float64(v.ShiftStateValue))
-	case *protos.Value_Invalid:
-		log.Printf("Invalid value received for field '%s', setting as NaN", fieldName)
-			service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(0)
 	case *protos.Value_LaneAssistLevelValue:
 		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(float64(v.LaneAssistLevelValue))
 	case *protos.Value_ScheduledChargingModeValue:
@@ -704,9 +759,6 @@ func processValue(datum *protos.Datum, service *Service, vin string, createdAt t
 		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(float64(v.ChargePortLatchValue))
 	case *protos.Value_CruiseStateValue:
 		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(float64(v.CruiseStateValue))
-	case *protos.Value_DoorValue:
-		// Assuming DoorValue is a complex type, handle it accordingly
-		// Example: service.PrometheusMetrics.Gauge.WithLabelValues(fieldName+"_driver_front", vin).Set(boolToFloat64(v.DoorValue.DriverFront))
 	case *protos.Value_DriveInverterStateValue:
 		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(float64(v.DriveInverterStateValue))
 	case *protos.Value_HvilStatusValue:
@@ -726,10 +778,23 @@ func processValue(datum *protos.Datum, service *Service, vin string, createdAt t
 	case *protos.Value_TrailerAirStatusValue:
 		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(float64(v.TrailerAirStatusValue))
 	case *protos.Value_TimeValue:
-		// Assuming TimeValue is a complex type, handle it accordingly
-		// Example: service.PrometheusMetrics.Gauge.WithLabelValues(fieldName+"_hour", vin).Set(float64(v.TimeValue.Hour))
+		// Since TimeValue is a complex type, you can break it down
+		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName+"_hour", vin).Set(float64(v.TimeValue.Hour))
+		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName+"_minute", vin).Set(float64(v.TimeValue.Minute))
+		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName+"_second", vin).Set(float64(v.TimeValue.Second))
 	case *protos.Value_DetailedChargeStateValue:
 		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(float64(v.DetailedChargeStateValue))
+	case *protos.Value_DoorValue:
+		// Doors is a complex type; handle each door status separately
+		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName+"_driver_front", vin).Set(boolToFloat64(v.DoorValue.DriverFront))
+		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName+"_passenger_front", vin).Set(boolToFloat64(v.DoorValue.PassengerFront))
+		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName+"_driver_rear", vin).Set(boolToFloat64(v.DoorValue.DriverRear))
+		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName+"_passenger_rear", vin).Set(boolToFloat64(v.DoorValue.PassengerRear))
+		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName+"_trunk_front", vin).Set(boolToFloat64(v.DoorValue.TrunkFront))
+		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName+"_trunk_rear", vin).Set(boolToFloat64(v.DoorValue.TrunkRear))
+	case *protos.Value_Invalid:
+		log.Printf("Invalid value received for field '%s', setting as NaN", fieldName)
+		service.PrometheusMetrics.Gauge.WithLabelValues(fieldName, vin).Set(math.NaN())
 	default:
 		log.Printf("Unhandled value type for field '%s'", fieldName)
 	}
