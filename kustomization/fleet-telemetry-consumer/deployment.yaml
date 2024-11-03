@@ -43,33 +43,33 @@ spec:
             - name: AWS_BUCKET_HOST
               valueFrom:
                 configMapKeyRef:
-                  name: ceph-tesla
+                  name: ceph-hybrid-tesla
                   key: BUCKET_HOST
             - name: AWS_BUCKET_PORT
               valueFrom:
                 configMapKeyRef:
-                  name: ceph-tesla
+                  name: ceph-hybrid-tesla
                   key: BUCKET_PORT
             - name: AWS_BUCKET_NAME
               valueFrom:
                 configMapKeyRef:
-                  name: ceph-tesla
+                  name: ceph-hybrid-tesla
                   key: BUCKET_NAME
             - name: AWS_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
-                  name: ceph-tesla
+                  name: ceph-hybrid-tesla
                   key: AWS_ACCESS_KEY_ID
             - name: AWS_SECRET_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
-                  name: ceph-tesla
+                  name: ceph-hybrid-tesla
                   key: AWS_SECRET_ACCESS_KEY
             - name: AWS_BUCKET_REGION
               value: "us-east-1"
               # valueFrom:
               #   configMapKeyRef:
-              #     name: ceph-tesla
+              #     name: ceph-hybrid-tesla
               #     key: BUCKET_REGION
             # Local Backup Configuration
             - name: LOCAL_ENABLED
