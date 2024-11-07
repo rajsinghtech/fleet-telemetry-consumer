@@ -379,16 +379,17 @@ func storeProtobufInPostgres(db *sql.DB, payload *protos.Payload) error {
 	hash := sha256.Sum256(jsonData)
 	dataHash := fmt.Sprintf("%x", hash)
 
-	// Insert into PostgreSQL including data_hash
+	// Insert into PostgreSQL including data_hash with DO NOTHING on conflict
 	query := `
 		INSERT INTO telemetry_data (vin, created_at, data, data_hash)
 		VALUES ($1, $2, $3, $4)
 		ON CONFLICT (vin, created_at, data_hash)
-		DO NOTHING;
+		DO NOTHING
 	`
-	_, err = db.Exec(query, vin, createdAt, jsonData, dataHash)
-	if err != nil {
+	if _, err := db.Exec(query, vin, createdAt, jsonData, dataHash); err != nil {
 		return fmt.Errorf("failed to insert into PostgreSQL: %w", err)
+	} else {
+		log.Printf("Attempted to insert data into PostgreSQL for VIN:%s CreatedAt:%s", vin, createdAt.String())
 	}
 
 	// Log successful insertion into PostgreSQL
