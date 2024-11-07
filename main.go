@@ -105,12 +105,36 @@ func main() {
 		log.Fatal(http.ListenAndServe(prometheusAddr, nil))
 	}()
 
+	// **Create the telemetry table before starting goroutines**
+	if postgresEnabled == "true" {
+		connStr := fmt.Sprintf(
+			"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+			postgresHost, postgresPort, postgresUser, postgresPassword, postgresDBName, postgresSSLMode,
+		)
+		db, err := sql.Open("postgres", connStr)
+		if err != nil {
+			log.Fatalf("failed to connect to PostgreSQL: %s", err)
+		}
+		defer db.Close()
+
+		// Ensure the table exists
+		err = createTelemetryTable(db)
+		if err != nil {
+			log.Fatalf("failed to create telemetry table: %s", err)
+		}
+	}
+
 	// If KAFKA_ENABLED is true
 	if kafkaEnabled == "true" {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			consumeFromKafka(ctx, awsEnabled, kafkaBootstrapServers, kafkaGroupID, kafkaTopic, kafkaAutoOffsetReset, awsAccessKeyID, awsSecretAccessKey, awsBucketName, awsBucketRegion, awsBucketHost, awsBucketPort, awsBucketProtocol, localBasePath, localEnabled, postgresEnabled, postgresHost, postgresPort, postgresUser, postgresPassword, postgresDBName, postgresSSLMode)
+			consumeFromKafka(
+				ctx, awsEnabled, kafkaBootstrapServers, kafkaGroupID, kafkaTopic, kafkaAutoOffsetReset,
+				awsAccessKeyID, awsSecretAccessKey, awsBucketName, awsBucketRegion,
+				awsBucketHost, awsBucketPort, awsBucketProtocol, localBasePath, localEnabled,
+				postgresEnabled, postgresHost, postgresPort, postgresUser, postgresPassword, postgresDBName, postgresSSLMode,
+			)
 		}()
 	}
 
@@ -121,7 +145,11 @@ func main() {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				err := loadOldData(ctx, loadDays, awsAccessKeyID, awsSecretAccessKey, awsBucketName, awsBucketRegion, awsBucketHost, awsBucketPort, awsBucketProtocol, postgresHost, postgresPort, postgresUser, postgresPassword, postgresDBName, postgresSSLMode)
+				err := loadOldData(
+					ctx, loadDays, awsAccessKeyID, awsSecretAccessKey, awsBucketName, awsBucketRegion,
+					awsBucketHost, awsBucketPort, awsBucketProtocol,
+					postgresHost, postgresPort, postgresUser, postgresPassword, postgresDBName, postgresSSLMode,
+				)
 				if err != nil {
 					log.Printf("Error loading old data: %s", err)
 				}
@@ -181,11 +209,6 @@ func consumeFromKafka(ctx context.Context, awsEnabled string, kafkaBootstrapServ
 			log.Fatalf("failed to connect to PostgreSQL: %s", err)
 		}
 		defer db.Close()
-		// Ensure the table exists
-		err = createTelemetryTable(db)
-		if err != nil {
-			log.Fatalf("failed to create telemetry table: %s", err)
-		}
 	}
 
 	for {
@@ -385,11 +408,6 @@ func loadOldData(ctx context.Context, loadDays int, awsAccessKeyID string, awsSe
 		return fmt.Errorf("failed to connect to postgres: %s", err)
 	}
 	defer db.Close()
-
-	err = createTelemetryTable(db)
-	if err != nil {
-		return fmt.Errorf("failed to create telemetry table: %s", err)
-	}
 
 	// For each day in LOAD_DAYS
 	now := time.Now()
