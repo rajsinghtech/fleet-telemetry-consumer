@@ -209,21 +209,29 @@ func consumeFromKafka(ctx context.Context, awsEnabled string, kafkaBootstrapServ
 
 			messagesConsumed.Inc()
 
+			// **Enhanced log statement with message metadata**
+			log.Printf("Consumed message Topic:%s Partition:%d Offset:%d Key:%s Timestamp:%s", *msg.TopicPartition.Topic, msg.TopicPartition.Partition, msg.TopicPartition.Offset, string(msg.Key), msg.Timestamp.String())
+
 			// Process message
 			payload := &protos.Payload{}
 			err = proto.Unmarshal(msg.Value, payload)
 			if err != nil {
-				log.Printf("failed to unmarshal protobuf message: %s", err)
+				log.Printf("Failed to unmarshal protobuf message from Kafka at Offset:%d Partition:%d Error:%s", msg.TopicPartition.Offset, msg.TopicPartition.Partition, err)
 				messagesFailed.Inc()
 				continue
 			}
+
+			// Log the VIN and CreatedAt from the payload
+			log.Printf("Processing Payload for VIN:%s CreatedAt:%s", payload.Vin, payload.CreatedAt.AsTime().String())
 
 			// Store protobuf message in S3 as .pb file
 			if awsEnabled == "true" {
 				err := storeProtobufInS3(s3Client, awsBucketName, payload)
 				if err != nil {
-					log.Printf("failed to store protobuf in S3: %s", err)
+					log.Printf("Failed to store protobuf in S3 for VIN:%s Error:%s", payload.Vin, err)
 					messagesFailed.Inc()
+				} else {
+					log.Printf("Successfully stored protobuf in S3 for VIN:%s", payload.Vin)
 				}
 			}
 
@@ -231,8 +239,10 @@ func consumeFromKafka(ctx context.Context, awsEnabled string, kafkaBootstrapServ
 			if localEnabled == "true" {
 				err := storeProtobufLocally(localBasePath, payload)
 				if err != nil {
-					log.Printf("failed to store protobuf locally: %s", err)
+					log.Printf("Failed to store protobuf locally for VIN:%s Error:%s", payload.Vin, err)
 					messagesFailed.Inc()
+				} else {
+					log.Printf("Successfully stored protobuf locally for VIN:%s", payload.Vin)
 				}
 			}
 
@@ -240,9 +250,18 @@ func consumeFromKafka(ctx context.Context, awsEnabled string, kafkaBootstrapServ
 			if postgresEnabled == "true" {
 				err = storeProtobufInPostgres(db, payload)
 				if err != nil {
-					log.Printf("failed to store protobuf in PostgreSQL: %s", err)
+					log.Printf("Failed to store protobuf in PostgreSQL for VIN:%s Error:%s", payload.Vin, err)
 					messagesFailed.Inc()
+				} else {
+					log.Printf("Successfully stored protobuf in PostgreSQL for VIN:%s", payload.Vin)
 				}
+			}
+
+			// Commit offsets manually if auto-commit is disabled
+			if _, err := consumer.CommitMessage(msg); err != nil {
+				log.Printf("Failed to commit message offset:%d Partition:%d Error:%s", msg.TopicPartition.Offset, msg.TopicPartition.Partition, err)
+			} else {
+				log.Printf("Committed message offset:%d Partition:%d", msg.TopicPartition.Offset, msg.TopicPartition.Partition)
 			}
 
 			messagesProcessed.Inc()
@@ -277,6 +296,9 @@ func storeProtobufInS3(s3Client *s3.S3, bucketName string, payload *protos.Paylo
 		return fmt.Errorf("failed to put object in S3: %w", err)
 	}
 
+	// **Log the S3 object key for tracking**
+	log.Printf("Stored object in S3 Bucket:%s Key:%s for VIN:%s", bucketName, objectKey, vin)
+
 	return nil
 }
 
@@ -310,6 +332,9 @@ func storeProtobufLocally(basePath string, payload *protos.Payload) error {
 		return fmt.Errorf("failed to write file %s: %w", filePath, err)
 	}
 
+	// **Log the file path for tracking**
+	log.Printf("Stored protobuf locally at Path:%s for VIN:%s", filePath, vin)
+
 	return nil
 }
 
@@ -331,6 +356,9 @@ func storeProtobufInPostgres(db *sql.DB, payload *protos.Payload) error {
 	if err != nil {
 		return fmt.Errorf("failed to insert into PostgreSQL: %w", err)
 	}
+
+	// **Log successful insertion into PostgreSQL**
+	log.Printf("Inserted data into PostgreSQL for VIN:%s CreatedAt:%s", vin, createdAt.String())
 
 	return nil
 }
@@ -371,8 +399,10 @@ func loadOldData(ctx context.Context, loadDays int, awsAccessKeyID string, awsSe
 		// Process objects for the day
 		err := listAndProcessObjects(ctx, s3Client, awsBucketName, day, db)
 		if err != nil {
-			log.Printf("failed to process objects for day %s: %s", day.Format("2006-01-02"), err)
+			log.Printf("Failed to process objects for day %s: %s", day.Format("2006-01-02"), err)
 			continue
+		} else {
+			log.Printf("Successfully processed data for date: %s", day.Format("2006-01-02"))
 		}
 	}
 
@@ -403,10 +433,13 @@ func listAndProcessObjects(ctx context.Context, s3Client *s3.S3, bucketName stri
 				continue
 			}
 			if objDate.Year() == day.Year() && objDate.Month() == day.Month() && objDate.Day() == day.Day() {
+				log.Printf("Processing S3 object Key:%s LastModified:%s", key, obj.LastModified.String())
 				err := processS3Object(s3Client, bucketName, key, db)
 				if err != nil {
-					log.Printf("failed to process object %s: %s", key, err)
+					log.Printf("Failed to process object %s: %s", key, err)
 					continue
+				} else {
+					log.Printf("Successfully processed object %s", key)
 				}
 			}
 
@@ -445,11 +478,17 @@ func processS3Object(s3Client *s3.S3, bucketName string, key string, db *sql.DB)
 		return fmt.Errorf("failed to unmarshal protobuf: %w", err)
 	}
 
+	// Log payload details
+	log.Printf("Processing payload from S3 object Key:%s VIN:%s CreatedAt:%s", key, payload.Vin, payload.CreatedAt.AsTime().String())
+
 	// Store protobuf message in PostgreSQL
 	err = storeProtobufInPostgres(db, payload)
 	if err != nil {
 		return fmt.Errorf("failed to store protobuf in PostgreSQL: %w", err)
 	}
+
+	// Log successful processing
+	log.Printf("Successfully processed S3 object Key:%s and stored data in PostgreSQL for VIN:%s", key, payload.Vin)
 
 	return nil
 }
