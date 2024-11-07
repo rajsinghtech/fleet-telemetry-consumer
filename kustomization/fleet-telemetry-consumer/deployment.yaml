@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: fleet-telemetry-consumer
-          image: quay.io/rajsinghcpre/fleet-telemetry-consumer:v0.0.18
+          image: quay.io/rajsinghcpre/fleet-telemetry-consumer:v0.0.23
           # Removed the command that uses the config file
           volumeMounts:
             - name: data
@@ -109,6 +109,121 @@ spec:
               value: "disable"
             - name: POSTGRES_ENABLED
               value: "true"
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fleet-telemetry-consumer-old
+  namespace: tesla
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fleet-telemetry-consumer-old
+  template:
+    metadata:
+      labels:
+        app: fleet-telemetry-consumer-old
+    spec:
+      containers:
+        - name: fleet-telemetry-consumer
+          image: quay.io/rajsinghcpre/fleet-telemetry-consumer:v0.0.18
+          # Removed the command that uses the config file
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          ports:
+            - containerPort: 2112
+              name: metrics
+          env:
+            - name: LOAD_DAYS
+              value: "1"
+            # Kafka Configuration
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: "tesla-kafka-bootstrap.tesla:9092"
+            - name: KAFKA_GROUP_ID
+              value: "fleet-telemetry-consumer-old"
+            - name: KAFKA_AUTO_OFFSET_RESET
+              value: "earliest"
+            - name: KAFKA_TOPIC
+              value: "tesla_V"
+            # AWS S3 Configuration
+            - name: AWS_ENABLED
+              value: "false"
+            - name: AWS_BUCKET_PROTOCOL
+              value: "http"
+            - name: AWS_BUCKET_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: ceph-hybrid-tesla
+                  key: BUCKET_HOST
+            - name: AWS_BUCKET_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: ceph-hybrid-tesla
+                  key: BUCKET_PORT
+            - name: AWS_BUCKET_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: ceph-hybrid-tesla
+                  key: BUCKET_NAME
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: ceph-hybrid-tesla
+                  key: AWS_ACCESS_KEY_ID
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ceph-hybrid-tesla
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: AWS_BUCKET_REGION
+              value: "us-east-1"
+              # valueFrom:
+              #   configMapKeyRef:
+              #     name: ceph-hybrid-tesla
+              #     key: BUCKET_REGION
+            # Local Backup Configuration
+            - name: LOCAL_ENABLED
+              value: "false"
+            - name: LOCAL_BASE_PATH
+              value: "/data"
+            # Prometheus Configuration
+            - name: PROMETHEUS_ADDR
+              value: ":2112"
+            # PostgreSQL Configuration
+            - name: POSTGRES_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-app
+                  key: host
+            - name: POSTGRES_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-app
+                  key: port
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-app
+                  key: user
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-app
+                  key: password
+            - name: POSTGRES_DBNAME
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-app
+                  key: dbname
+            - name: POSTGRES_SSLMODE
+              value: "disable"
+            - name: POSTGRES_ENABLED
+              value: "false"
       volumes:
         - name: data
           emptyDir: {}

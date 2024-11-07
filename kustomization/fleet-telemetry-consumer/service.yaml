@@ -1,13 +1,13 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: fleet-telemetry-consumer
+  name: fleet-telemetry-consumer-old
   namespace: tesla
   labels:
-    app: fleet-telemetry-consumer
+    app: fleet-telemetry-consumer-old
 spec:
   selector:
-    app: fleet-telemetry-consumer
+    app: fleet-telemetry-consumer-old
   ports:
     - name: metrics
       port: 2112

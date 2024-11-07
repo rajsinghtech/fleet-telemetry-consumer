@@ -1,14 +1,14 @@
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: fleet-telemetry-consumer
+  name: fleet-telemetry-consumer-old
   namespace: tesla
   labels:
-    app: fleet-telemetry-consumer
+    app: fleet-telemetry-consumer-old
 spec:
   selector:
     matchLabels:
-      app: fleet-telemetry-consumer
+      app: fleet-telemetry-consumer-old
   namespaceSelector:
     any: true
   endpoints:
