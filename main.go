@@ -16,6 +16,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"crypto/sha256"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -364,6 +365,7 @@ func storeProtobufLocally(basePath string, payload *protos.Payload) error {
 func storeProtobufInPostgres(db *sql.DB, payload *protos.Payload) error {
 	vin := payload.Vin
 	createdAt := payload.CreatedAt.AsTime().UTC()
+
 	marshaller := protojson.MarshalOptions{
 		UseProtoNames:   true,
 		EmitUnpopulated: true,
@@ -373,14 +375,23 @@ func storeProtobufInPostgres(db *sql.DB, payload *protos.Payload) error {
 		return fmt.Errorf("failed to marshal protobuf to JSON: %w", err)
 	}
 
-	// Insert into PostgreSQL
-	query := `INSERT INTO telemetry_data (vin, created_at, data) VALUES ($1, $2, $3) ON CONFLICT (vin, created_at) DO UPDATE SET data = EXCLUDED.data`
-	_, err = db.Exec(query, vin, createdAt, jsonData)
+	// Compute data_hash using SHA256
+	hash := sha256.Sum256(jsonData)
+	dataHash := fmt.Sprintf("%x", hash)
+
+	// Insert into PostgreSQL including data_hash
+	query := `
+		INSERT INTO telemetry_data (vin, created_at, data, data_hash)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (vin, created_at, data_hash)
+		DO NOTHING;
+	`
+	_, err = db.Exec(query, vin, createdAt, jsonData, dataHash)
 	if err != nil {
 		return fmt.Errorf("failed to insert into PostgreSQL: %w", err)
 	}
 
-	// **Log successful insertion into PostgreSQL**
+	// Log successful insertion into PostgreSQL
 	log.Printf("Inserted data into PostgreSQL for VIN:%s CreatedAt:%s", vin, createdAt.String())
 
 	return nil
