@@ -498,7 +498,8 @@ func createTelemetryTable(db *sql.DB) error {
         vin text,
         created_at timestamp with time zone,
         data jsonb,
-        PRIMARY KEY (vin, created_at)
+        data_hash text,
+        PRIMARY KEY (vin, created_at, data_hash)
     );`
 	_, err := db.Exec(query)
 	if err != nil {
