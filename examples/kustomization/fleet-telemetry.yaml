@@ -1,0 +1,54 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fleet-telemetry
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: fleet-telemetry
+  template:
+    metadata:
+      labels:
+        app: fleet-telemetry
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: fleet-telemetry
+        image: tesla/fleet-telemetry:v0.6.0
+        command: ["/fleet-telemetry", "-config=/etc/fleet-telemetry/config.json"]
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+        ports:
+        - containerPort: 8443
+        volumeMounts:
+        - name: config
+          mountPath: /etc/fleet-telemetry
+        - name: certs
+          mountPath: /etc/ssl/certs
+      volumes:
+      - name: config
+        configMap:
+          name: fleet-telemetry-config
+      - name: certs
+        secret:
+          secretName: fleet-telemetry-tesla-raj-tls
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fleet-telemetry
+spec:
+  selector:
+    app: fleet-telemetry
+  ports:
+    - protocol: TCP
+      port: 8443
+      targetPort: 8443
+  type: ClusterIP
