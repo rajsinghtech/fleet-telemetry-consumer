@@ -38,7 +38,7 @@ spec:
           name: fleet-telemetry-config
       - name: certs
         secret:
-          secretName: fleet-telemetry-tesla-raj-tls
+          secretName: tesla-raj-tls
 ---
 apiVersion: v1
 kind: Service
