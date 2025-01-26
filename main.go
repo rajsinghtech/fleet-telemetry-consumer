@@ -124,6 +124,54 @@ func registerPartnerAccount(token string) (*RegistrationResponse, error) {
 	return teslaResp.Response, nil
 }
 
+func verifyPublicKey(token, domain string) (*RegistrationResponse, error) {
+	// Clean the domain
+	domain = strings.TrimSpace(domain)
+	domain = strings.ToLower(domain)
+	domain = strings.TrimPrefix(domain, "https://")
+	domain = strings.TrimPrefix(domain, "http://")
+	domain = strings.TrimSuffix(domain, "/")
+
+	url := fmt.Sprintf("https://fleet-api.prd.na.vn.cloud.tesla.com/api/1/partner_accounts/public_key?domain=%s", domain)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating verification request: %v", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error making verification request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading verification response: %v", err)
+	}
+
+	log.Printf("Public key verification response status: %d", resp.StatusCode)
+	log.Printf("Public key verification response body: %s", string(body))
+
+	var teslaResp TeslaAPIResponse
+	if err := json.Unmarshal(body, &teslaResp); err != nil {
+		return nil, fmt.Errorf("error parsing verification response: %v", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("verification failed with status %d: %s", resp.StatusCode, teslaResp.Error)
+	}
+
+	if teslaResp.Response == nil {
+		return nil, fmt.Errorf("empty verification response from Tesla API")
+	}
+
+	return teslaResp.Response, nil
+}
+
 var (
 	clientID     []byte
 	clientSecret []byte
@@ -180,9 +228,43 @@ func main() {
 			})
 		}
 
+		// Verify the public key registration
+		verifyResp, err := verifyPublicKey(token.AccessToken, string(domainName))
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{
+				"error":        "Public key verification failed: " + err.Error(),
+				"token":        token,
+				"registration": regResp,
+			})
+		}
+
 		return c.JSON(fiber.Map{
 			"token":        token,
 			"registration": regResp,
+			"verification": verifyResp,
+		})
+	})
+
+	// Add a separate endpoint for verification only
+	app.Post("/verify-key", func(c *fiber.Ctx) error {
+		token, err := generateToken()
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{
+				"error": "Token generation failed: " + err.Error(),
+			})
+		}
+
+		verifyResp, err := verifyPublicKey(token.AccessToken, string(domainName))
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{
+				"error": "Public key verification failed: " + err.Error(),
+				"token": token,
+			})
+		}
+
+		return c.JSON(fiber.Map{
+			"token":        token,
+			"verification": verifyResp,
 		})
 	})
 

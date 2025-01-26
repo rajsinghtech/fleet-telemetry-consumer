@@ -101,6 +101,15 @@
             gap: 10px;
             margin: 20px 0;
         }
+        .success-message {
+            color: #2e7d32;
+            margin-top: 10px;
+            display: none;
+            padding: 15px;
+            background-color: rgba(232, 245, 233, 0.9);
+            border-radius: 20px;
+            backdrop-filter: blur(8px);
+        }
     </style>
 </head>
 <body>
@@ -112,6 +121,9 @@
         <div class="button-container">
             <button class="tesla-button" onclick="generateToken()">
                 Generate Partner Token & Register
+            </button>
+            <button class="tesla-button secondary" onclick="verifyKey()">
+                Verify Public Key
             </button>
             <button class="tesla-button secondary" onclick="window.location.href='/.well-known/appspecific/com.tesla.3p.public-key.pem'">
                 Download Public Key
@@ -126,8 +138,13 @@
                 <h3>Registration Response:</h3>
                 <pre id="registrationContent"></pre>
             </div>
+            <div class="response-section">
+                <h3>Verification Response:</h3>
+                <pre id="verificationContent"></pre>
+            </div>
         </div>
         <div id="errorMessage" class="error-message"></div>
+        <div id="successMessage" class="success-message"></div>
     </div>
 
     <script>
@@ -135,7 +152,9 @@
             const responseDisplay = document.getElementById('responseDisplay');
             const tokenContent = document.getElementById('tokenContent');
             const registrationContent = document.getElementById('registrationContent');
+            const verificationContent = document.getElementById('verificationContent');
             const errorMessage = document.getElementById('errorMessage');
+            const successMessage = document.getElementById('successMessage');
             
             try {
                 const response = await fetch('/generate-token', {
@@ -150,11 +169,48 @@
                 const data = await response.json();
                 tokenContent.textContent = JSON.stringify(data.token, null, 2);
                 registrationContent.textContent = JSON.stringify(data.registration, null, 2);
+                verificationContent.textContent = JSON.stringify(data.verification, null, 2);
                 responseDisplay.style.display = 'block';
                 errorMessage.style.display = 'none';
+                successMessage.textContent = 'Registration and verification successful!';
+                successMessage.style.display = 'block';
             } catch (error) {
                 errorMessage.textContent = error.message;
                 errorMessage.style.display = 'block';
+                successMessage.style.display = 'none';
+                responseDisplay.style.display = 'none';
+            }
+        }
+
+        async function verifyKey() {
+            const responseDisplay = document.getElementById('responseDisplay');
+            const tokenContent = document.getElementById('tokenContent');
+            const verificationContent = document.getElementById('verificationContent');
+            const errorMessage = document.getElementById('errorMessage');
+            const successMessage = document.getElementById('successMessage');
+            
+            try {
+                const response = await fetch('/verify-key', {
+                    method: 'POST',
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Failed to verify public key');
+                }
+                
+                const data = await response.json();
+                tokenContent.textContent = JSON.stringify(data.token, null, 2);
+                verificationContent.textContent = JSON.stringify(data.verification, null, 2);
+                document.querySelector('.response-section:nth-child(2)').style.display = 'none';
+                responseDisplay.style.display = 'block';
+                errorMessage.style.display = 'none';
+                successMessage.textContent = 'Public key verification successful!';
+                successMessage.style.display = 'block';
+            } catch (error) {
+                errorMessage.textContent = error.message;
+                errorMessage.style.display = 'block';
+                successMessage.style.display = 'none';
                 responseDisplay.style.display = 'none';
             }
         }
