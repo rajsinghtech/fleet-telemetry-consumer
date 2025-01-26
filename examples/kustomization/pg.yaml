@@ -1,0 +1,9 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: fleet-telemetry-consumer-db
+spec:
+  instances: 3
+  storage:
+    size: 10Gi
+    storageClass: ceph-block-replicated-nvme

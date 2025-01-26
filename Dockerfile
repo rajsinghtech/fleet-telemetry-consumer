@@ -23,7 +23,6 @@ WORKDIR /app
 # Copy the binary from builder
 COPY --from=builder /app/main .
 COPY views/ views/
-COPY static/ static/
 
 # Run as non-root user
 RUN adduser -D appuser

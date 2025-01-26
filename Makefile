@@ -22,11 +22,16 @@ proxy:
 
 pull-secrets:
 	@echo "Creating static directory if it doesn't exist..."
-	@mkdir -p ./static
+	@mkdir -p ./secrets
+	@mkdir -p ./secrets/fleet-api
+	@mkdir -p ./secrets/ssl
+	@mkdir -p ./secrets/pg
 	@echo "Pulling secrets from tesla-fleet-api..."
-	kubectl get secret tesla-fleet-api -n tesla -o jsonpath='{.data}' | jq -r 'to_entries[] | "echo \"Extracting \(.key)...\"; echo \(.value) | base64 -d > \"./static/\(.key)\""' | sh
+	kubectl get secret tesla-fleet-api -n tesla -o jsonpath='{.data}' | jq -r 'to_entries[] | "echo \"Extracting \(.key)...\"; echo \(.value) | base64 -d > \"./secrets/fleet-api/\(.key)\""' | sh
 	@echo "Pulling secrets from tesla-raj-tls..."
-	kubectl get secret tesla-raj-tls -n tesla -o jsonpath='{.data}' | jq -r 'to_entries[] | "echo \"Extracting \(.key)...\"; echo \(.value) | base64 -d > \"./static/\(.key)\""' | sh
+	kubectl get secret tesla-raj-tls -n tesla -o jsonpath='{.data}' | jq -r 'to_entries[] | "echo \"Extracting \(.key)...\"; echo \(.value) | base64 -d > \"./secrets/ssl/\(.key)\""' | sh
+	@echo "Pulling secrets from fleet-telemetry-consumer-db-app..."
+	kubectl get secret fleet-telemetry-consumer-db-app -n tesla -o jsonpath='{.data}' | jq -r 'to_entries[] | "echo \"Extracting \(.key)...\"; echo \(.value) | base64 -d | sed \"s/\\.tesla/\\.tesla\\.svc\\.cluster\\.local/g\" > \"./secrets/pg/\(.key)\""' | sh
 	@echo "Done pulling secrets!"
 
 .PHONY: apply delete reload run proxy pull-secrets

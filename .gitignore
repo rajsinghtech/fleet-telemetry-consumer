@@ -1,1 +1,2 @@
-static/
+./secrets/fleet-api/
+secrets/*

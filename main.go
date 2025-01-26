@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,7 +10,12 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
+	"time"
+
+	"fleet-telemetry-consumer/db"
+	"fleet-telemetry-consumer/models"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/template/html/v2"
@@ -78,6 +84,36 @@ type Vehicle struct {
 	IDS             string `json:"id_s"`
 	CalendarEnabled bool   `json:"calendar_enabled"`
 	APIVersion      int    `json:"api_version"`
+}
+
+// Update telemetry configuration struct
+type TelemetryConfig struct {
+	Config struct {
+		PreferTyped bool     `json:"prefer_typed"`
+		Port        int      `json:"port"`
+		Exp         int64    `json:"exp"`
+		AlertTypes  []string `json:"alert_types"`
+		Fields      map[string]struct {
+			ResendIntervalSeconds int `json:"resend_interval_seconds"`
+			MinimumDelta          int `json:"minimum_delta"`
+			IntervalSeconds       int `json:"interval_seconds"`
+		} `json:"fields"`
+		CA       string `json:"ca"`
+		Hostname string `json:"hostname"`
+	} `json:"config"`
+	VINs []string `json:"vins"`
+}
+
+type UserInfo struct {
+	Sub         string `json:"sub"`          // User ID
+	Name        string `json:"name"`         // Full name
+	Email       string `json:"email"`        // Email address
+	AccountType string `json:"account_type"` // Type of account (e.g., "person")
+	AccountID   string `json:"account_id"`   // Tesla account ID
+	Picture     string `json:"picture"`      // Profile picture URL
+	Locale      string `json:"locale"`       // User's locale
+	CountryCode string `json:"country_code"` // User's country code
+	UpdatedAt   int64  `json:"updated_at"`   // Last update timestamp
 }
 
 func generateToken() (*TokenResponse, error) {
@@ -347,24 +383,200 @@ func getVirtualKeyURL() string {
 	return fmt.Sprintf("https://www.tesla.com/_ak/%s", domain)
 }
 
+// Update configure telemetry function
+func configureTelemetry(vin, accessToken string) error {
+	// Tesla's proxy runs on localhost:4443 with HTTPS
+	proxyURL := "https://localhost:4443"
+
+	// Read the CA certificate
+	caCert, err := os.ReadFile("./secrets/ssl/tls.crt")
+	if err != nil {
+		return fmt.Errorf("error reading CA certificate: %v", err)
+	}
+
+	config := TelemetryConfig{}
+	config.Config.PreferTyped = true
+	config.Config.Port = 8443
+	config.Config.Exp = 1769366508 // Set to just below the maximum allowed timestamp
+	config.Config.AlertTypes = []string{"service"}
+	config.Config.Fields = map[string]struct {
+		ResendIntervalSeconds int `json:"resend_interval_seconds"`
+		MinimumDelta          int `json:"minimum_delta"`
+		IntervalSeconds       int `json:"interval_seconds"`
+	}{
+		"Location": {
+			IntervalSeconds: 15,
+		},
+		"GpsHeading": {
+			IntervalSeconds: 15,
+		},
+		"Odometer": {
+			IntervalSeconds: 600,
+		},
+		"VehicleSpeed": {
+			IntervalSeconds: 30,
+		},
+		"LateralAcceleration": {
+			IntervalSeconds: 30,
+		},
+		"MilesToArrival": {
+			IntervalSeconds: 120,
+		},
+		"LifetimeEnergyUsedDrive": {
+			IntervalSeconds: 120,
+		},
+		"DestinationLocation": {
+			IntervalSeconds: 120,
+		},
+		"EstBatteryRange": {
+			IntervalSeconds: 30,
+		},
+		"LongitudinalAcceleration": {
+			IntervalSeconds: 30,
+		},
+	}
+	config.Config.CA = string(caCert)
+	config.Config.Hostname = "fleet-telemetry.tesla.rajsingh.info"
+	config.VINs = []string{vin}
+
+	jsonData, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("error marshaling config: %v", err)
+	}
+
+	// Log the request payload for debugging
+	log.Printf("Telemetry configuration request: %s", string(jsonData))
+
+	url := fmt.Sprintf("%s/api/1/vehicles/fleet_telemetry_config", proxyURL)
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("error creating request: %v", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+
+	// Create a custom HTTP client that skips TLS verification for localhost
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true, // Skip verification since it's localhost
+		},
+	}
+	client := &http.Client{Transport: tr}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("error making request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to configure telemetry with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Log the response for debugging
+	log.Printf("Telemetry configuration response: %s", string(body))
+
+	return nil
+}
+
+func getUserInfo(accessToken string) (*UserInfo, error) {
+	req, err := http.NewRequest("GET", "https://auth.tesla.com/oauth2/v3/userinfo", nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %v", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error making request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading response: %v", err)
+	}
+
+	log.Printf("User info response status: %d", resp.StatusCode)
+	log.Printf("User info response body: %s", string(body))
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to get user info with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var userInfo UserInfo
+	if err := json.Unmarshal(body, &userInfo); err != nil {
+		return nil, fmt.Errorf("error parsing response: %v", err)
+	}
+
+	return &userInfo, nil
+}
+
 func main() {
 	var err error
 	// Read credentials
-	clientID, err = os.ReadFile("static/CLIENT_ID")
+	clientID, err = os.ReadFile("./secrets/fleet-api/CLIENT_ID")
 	if err != nil {
 		log.Fatal("Error reading CLIENT_ID:", err)
 	}
-	clientSecret, err = os.ReadFile("static/CLIENT_SECRET")
+	clientSecret, err = os.ReadFile("./secrets/fleet-api/CLIENT_SECRET")
 	if err != nil {
 		log.Fatal("Error reading CLIENT_SECRET:", err)
 	}
-	domainName, err = os.ReadFile("static/DOMAIN")
+	domainName, err = os.ReadFile("./secrets/fleet-api/DOMAIN")
 	if err != nil {
 		log.Fatal("Error reading DOMAIN:", err)
 	}
 
+	// Read database credentials from secrets
+	dbHost, err := os.ReadFile("./secrets/pg/host")
+	if err != nil {
+		log.Fatal("Error reading database host:", err)
+	}
+	dbUser, err := os.ReadFile("./secrets/pg/user")
+	if err != nil {
+		log.Fatal("Error reading database user:", err)
+	}
+	dbPass, err := os.ReadFile("./secrets/pg/password")
+	if err != nil {
+		log.Fatal("Error reading database password:", err)
+	}
+	dbName, err := os.ReadFile("./secrets/pg/dbname")
+	if err != nil {
+		log.Fatal("Error reading database name:", err)
+	}
+	dbPortBytes, err := os.ReadFile("./secrets/pg/port")
+	if err != nil {
+		log.Fatal("Error reading database port:", err)
+	}
+
+	// Initialize database with credentials from secrets
+	port := 5432
+	if p, err := strconv.Atoi(strings.TrimSpace(string(dbPortBytes))); err == nil {
+		port = p
+	}
+	err = db.InitDB(
+		strings.TrimSpace(string(dbHost)),
+		strings.TrimSpace(string(dbUser)),
+		strings.TrimSpace(string(dbPass)),
+		strings.TrimSpace(string(dbName)),
+		port,
+	)
+	if err != nil {
+		log.Fatal("Error initializing database:", err)
+	}
+
 	// Create a new engine
 	engine := html.New("./views", ".html")
+
+	// Add template functions
+	engine.AddFunc("add", func(a, b int) int {
+		return a + b
+	})
 
 	// Create new Fiber app with template engine
 	app := fiber.New(fiber.Config{
@@ -372,11 +584,11 @@ func main() {
 	})
 
 	// Serve static files
-	app.Static("/static", "./static")
+	app.Static("/secrets/fleet-api", "./secrets/fleet-api")
 
 	// Serve the public key at the specified path
 	app.Get("/.well-known/appspecific/com.tesla.3p.public-key.pem", func(c *fiber.Ctx) error {
-		return c.SendFile("./static/public-key.pem")
+		return c.SendFile("./secrets/fleet-api/public-key.pem")
 	})
 
 	// Generate token and register partner account endpoint
@@ -449,7 +661,7 @@ func main() {
 		code := c.Query("code")
 		state := c.Query("state")
 
-		if state != "abc123" { // Match the state from the auth request
+		if state != "abc123" {
 			return c.Status(400).JSON(fiber.Map{
 				"error": "Invalid state parameter",
 			})
@@ -474,22 +686,286 @@ func main() {
 			log.Printf("Warning: Failed to get vehicles: %v", err)
 		}
 
-		// Check if the request accepts JSON
-		accepts := c.Accepts("application/json")
-		if accepts == "application/json" {
+		// Get user information
+		userInfo, err := getUserInfo(token.AccessToken)
+		if err != nil {
+			log.Printf("Warning: Failed to get user info: %v", err)
+		}
+
+		// Store the Tesla account in the database
+		teslaAccount := &models.TeslaAccount{
+			AccessToken:  token.AccessToken,
+			RefreshToken: token.RefreshToken,
+			TokenType:    token.TokenType,
+			ExpiresIn:    token.ExpiresIn,
+			ExpiresAt:    time.Now().Add(time.Duration(token.ExpiresIn) * time.Second),
+			Scope:        token.Scope,
+			State:        token.State,
+			LastSyncedAt: time.Now(),
+		}
+
+		// Add user information if available
+		if userInfo != nil {
+			teslaAccount.UserID = userInfo.Sub
+			teslaAccount.Name = userInfo.Name
+			teslaAccount.Email = userInfo.Email
+			teslaAccount.AccountType = userInfo.AccountType
+			teslaAccount.TeslaID = userInfo.AccountID
+			teslaAccount.Picture = userInfo.Picture
+			teslaAccount.Locale = userInfo.Locale
+			teslaAccount.CountryCode = userInfo.CountryCode
+		}
+
+		if err := db.CreateOrUpdateTeslaAccount(teslaAccount); err != nil {
+			log.Printf("Warning: Failed to store Tesla account: %v", err)
+		}
+
+		// Store the vehicles in the database
+		for _, v := range vehicles.Response {
+			teslaVehicle := &models.TeslaVehicle{
+				AccountID:     teslaAccount.ID,
+				TeslaID:       v.ID,
+				VehicleID:     v.VehicleID,
+				VIN:           v.VIN,
+				DisplayName:   v.DisplayName,
+				State:         v.State,
+				InService:     v.InService,
+				APIVersion:    v.APIVersion,
+				AccessType:    v.AccessType,
+				HasVirtualKey: !v.GranularAccess.HidePrivate, // If nothing is hidden, we likely have a virtual key
+				LastSyncedAt:  time.Now(),
+			}
+
+			if err := db.CreateOrUpdateTeslaVehicle(teslaVehicle); err != nil {
+				log.Printf("Warning: Failed to store vehicle %s: %v", v.VIN, err)
+			}
+		}
+
+		// Set success cookie and redirect for browser requests
+		c.Cookie(&fiber.Cookie{
+			Name:    "auth_success",
+			Value:   "true",
+			Expires: time.Now().Add(5 * time.Second),
+		})
+
+		// Only return JSON if explicitly requested
+		if c.Get("Accept") == "application/json" {
 			return c.JSON(fiber.Map{
-				"token":    token,
 				"message":  "Successfully obtained user access token",
+				"token":    token,
 				"vehicles": vehicles.Response,
 			})
 		}
 
-		// Otherwise, render the success page
-		return c.Render("callback", fiber.Map{
-			"Title":         "Authorization Successful",
-			"Token":         token,
-			"Vehicles":      vehicles.Response,
-			"VirtualKeyURL": getVirtualKeyURL(),
+		// Default to redirect for all other requests (browsers)
+		return c.Redirect("/dashboard")
+	})
+
+	// Update dashboard endpoint to handle success message
+	app.Get("/dashboard", func(c *fiber.Ctx) error {
+		accounts, err := db.GetAllTeslaAccounts()
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{
+				"error": "Failed to fetch accounts: " + err.Error(),
+			})
+		}
+
+		// Check for auth success message
+		showSuccess := c.Cookies("auth_success") == "true"
+
+		return c.Render("dashboard", fiber.Map{
+			"Title":       "Tesla Fleet Dashboard",
+			"Accounts":    accounts,
+			"ShowSuccess": showSuccess,
+		})
+	})
+
+	// Add programming endpoint
+	app.Post("/api/vehicles/:vin/program", func(c *fiber.Ctx) error {
+		vin := c.Params("vin")
+
+		// Find the vehicle in the database
+		var vehicle models.TeslaVehicle
+		result := db.DB.Where("vin = ?", vin).First(&vehicle)
+		if result.Error != nil {
+			return c.Status(404).JSON(fiber.Map{
+				"error": "Vehicle not found",
+			})
+		}
+
+		// Get the associated account
+		var account models.TeslaAccount
+		result = db.DB.First(&account, vehicle.AccountID)
+		if result.Error != nil {
+			return c.Status(500).JSON(fiber.Map{
+				"error": "Failed to find associated account",
+			})
+		}
+
+		// Configure telemetry using the account's access token
+		err := configureTelemetry(vin, account.AccessToken)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{
+				"error": "Failed to configure telemetry: " + err.Error(),
+			})
+		}
+
+		// Update vehicle in database to mark as programmed
+		vehicle.LastSyncedAt = time.Now()
+		db.DB.Save(&vehicle)
+
+		return c.JSON(fiber.Map{
+			"message": "Vehicle successfully programmed for telemetry",
+			"vin":     vin,
+		})
+	})
+
+	// Add endpoint to get telemetry configuration
+	app.Get("/api/vehicles/:vin/telemetry", func(c *fiber.Ctx) error {
+		vin := c.Params("vin")
+
+		// Find the vehicle in the database
+		var vehicle models.TeslaVehicle
+		dbResult := db.DB.Where("vin = ?", vin).First(&vehicle)
+		if dbResult.Error != nil {
+			return c.Status(404).JSON(fiber.Map{
+				"error": "Vehicle not found",
+			})
+		}
+
+		// Get the associated account
+		var account models.TeslaAccount
+		dbResult = db.DB.First(&account, vehicle.AccountID)
+		if dbResult.Error != nil {
+			return c.Status(500).JSON(fiber.Map{
+				"error": "Failed to find associated account",
+			})
+		}
+
+		// Create custom HTTP client that skips TLS verification for localhost
+		tr := &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		}
+		client := &http.Client{Transport: tr}
+
+		// Make request to Tesla's proxy to get telemetry config
+		url := fmt.Sprintf("https://localhost:4443/api/1/vehicles/%s/fleet_telemetry_config", vin)
+		log.Printf("Getting telemetry config from: %s", url)
+
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{
+				"error": "Failed to create request: " + err.Error(),
+			})
+		}
+
+		req.Header.Set("Authorization", "Bearer "+account.AccessToken)
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{
+				"error": "Failed to get telemetry config: " + err.Error(),
+			})
+		}
+		defer resp.Body.Close()
+
+		// Read and log the response body
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{
+				"error": "Failed to read response: " + err.Error(),
+			})
+		}
+		log.Printf("Get telemetry config response (status %d): %s", resp.StatusCode, string(body))
+
+		if resp.StatusCode != http.StatusOK {
+			return c.Status(resp.StatusCode).JSON(fiber.Map{
+				"error": fmt.Sprintf("Failed to get telemetry config with status %d: %s", resp.StatusCode, string(body)),
+			})
+		}
+
+		// Parse and return the response
+		var result map[string]interface{}
+		if err := json.Unmarshal(body, &result); err != nil {
+			return c.Status(500).JSON(fiber.Map{
+				"error": "Failed to parse response: " + err.Error(),
+			})
+		}
+
+		return c.JSON(result)
+	})
+
+	// Add endpoint to delete telemetry configuration
+	app.Delete("/api/vehicles/:vin/telemetry", func(c *fiber.Ctx) error {
+		vin := c.Params("vin")
+
+		// Find the vehicle in the database
+		var vehicle models.TeslaVehicle
+		dbResult := db.DB.Where("vin = ?", vin).First(&vehicle)
+		if dbResult.Error != nil {
+			return c.Status(404).JSON(fiber.Map{
+				"error": "Vehicle not found",
+			})
+		}
+
+		// Get the associated account
+		var account models.TeslaAccount
+		dbResult = db.DB.First(&account, vehicle.AccountID)
+		if dbResult.Error != nil {
+			return c.Status(500).JSON(fiber.Map{
+				"error": "Failed to find associated account",
+			})
+		}
+
+		// Create custom HTTP client that skips TLS verification for localhost
+		tr := &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		}
+		client := &http.Client{Transport: tr}
+
+		// Make request to Tesla's proxy to delete telemetry config
+		url := fmt.Sprintf("https://localhost:4443/api/1/vehicles/%s/fleet_telemetry_config", vin)
+		log.Printf("Deleting telemetry config from: %s", url)
+
+		req, err := http.NewRequest("DELETE", url, nil)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{
+				"error": "Failed to create request: " + err.Error(),
+			})
+		}
+
+		req.Header.Set("Authorization", "Bearer "+account.AccessToken)
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{
+				"error": "Failed to delete telemetry config: " + err.Error(),
+			})
+		}
+		defer resp.Body.Close()
+
+		// Read and log the response body
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{
+				"error": "Failed to read response: " + err.Error(),
+			})
+		}
+		log.Printf("Delete telemetry config response (status %d): %s", resp.StatusCode, string(body))
+
+		if resp.StatusCode != http.StatusOK {
+			return c.Status(resp.StatusCode).JSON(fiber.Map{
+				"error": fmt.Sprintf("Failed to delete telemetry config with status %d: %s", resp.StatusCode, string(body)),
+			})
+		}
+
+		return c.JSON(fiber.Map{
+			"message": "Telemetry configuration successfully deleted",
+			"vin":     vin,
 		})
 	})
 

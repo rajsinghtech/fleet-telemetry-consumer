@@ -1,0 +1,79 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fleet-telemetry-consumer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fleet-telemetry-consumer
+  template:
+    metadata:
+      labels:
+        app: fleet-telemetry-consumer
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: tesla-http-proxy
+          image: tesla/vehicle-command:latest
+          ports:
+            - containerPort: 4443
+          env:
+            - name: TESLA_HTTP_PROXY_TLS_CERT
+              value: /config/tls.crt
+            - name: TESLA_HTTP_PROXY_TLS_KEY
+              value: /config/tls.key
+            - name: TESLA_HTTP_PROXY_HOST
+              value: "0.0.0.0"
+            - name: TESLA_HTTP_PROXY_PORT
+              value: "4443"
+            - name: TESLA_HTTP_PROXY_TIMEOUT
+              value: "10s"
+            - name: TESLA_KEY_FILE
+              value: /secret/private-key.pem
+            - name: TESLA_VERBOSE
+              value: "true"
+          volumeMounts:
+            - name: certs
+              mountPath: /config
+            - name: fleet-key-secret
+              mountPath: /secret
+        - name: fleet-telemetry-consumer
+          image: quay.io/rajsinghcpre/fleet-telemetry-consumer:v0.0.27
+          command: ["/fleet-telemetry-consumer", "-config=/etc/fleet-telemetry-consumer/config.json"]
+          ports:
+            - containerPort: 3000
+          volumeMounts:
+            - name: config
+              mountPath: /etc/fleet-telemetry-consumer
+            - name: certs
+              mountPath: /etc/ssl/certs
+            - name: pg-secret
+              mountPath: /secrets/pg
+      volumes:
+      - name: config
+        configMap:
+          name: fleet-telemetry-consumer-config
+      - name: certs
+        secret:
+          secretName: tesla-raj-tls
+      - name: pg-secret
+        secret:
+          secretName: fleet-telemetry-consumer-db-app
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fleet-telemetry-consumer
+spec:
+  selector:
+    app: fleet-telemetry-consumer
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 3000
+  type: ClusterIP

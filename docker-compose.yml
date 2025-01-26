@@ -14,15 +14,6 @@ services:
       - TESLA_KEY_FILE=/secret/private-key.pem
       - TESLA_VERBOSE=true
     volumes:
-      - ./static/tls.crt:/config/tls.crt:ro
-      - ./static/tls.key:/config/tls.key:ro
-      - ./static/private-key.pem:/secret/private-key.pem:ro
-
-  # fleet-telemetry-consumer:
-  #   build: 
-  #     context: .
-  #     dockerfile: Dockerfile
-  #   ports:
-  #     - "3000:3000"
-  #   depends_on:
-  #     - tesla-http-proxy
+      - ./secrets/ssl/tls.crt:/config/tls.crt:ro
+      - ./secrets/ssl/tls.key:/config/tls.key:ro
+      - ./secrets/fleet-api/private-key.pem:/secret/private-key.pem:ro
