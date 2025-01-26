@@ -18,13 +18,11 @@ services:
       - ./static/tls.key:/config/tls.key:ro
       - ./static/private-key.pem:/secret/private-key.pem:ro
 
-
-
-  fleet-telemetry-consumer:
-    build: 
-      context: .
-      dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
-    depends_on:
-      - tesla-http-proxy
+  # fleet-telemetry-consumer:
+  #   build: 
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   ports:
+  #     - "3000:3000"
+  #   depends_on:
+  #     - tesla-http-proxy

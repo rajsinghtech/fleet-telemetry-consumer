@@ -50,6 +50,36 @@ type AuthConfig struct {
 	Scope       string `json:"scope"`
 }
 
+type VehicleResponse struct {
+	Response   []Vehicle `json:"response"`
+	Pagination struct {
+		Previous interface{} `json:"previous"`
+		Next     interface{} `json:"next"`
+		Current  int         `json:"current"`
+		PerPage  int         `json:"per_page"`
+		Count    int         `json:"count"`
+		Pages    int         `json:"pages"`
+	} `json:"pagination"`
+	Count int `json:"count"`
+}
+
+type Vehicle struct {
+	ID             int64       `json:"id"`
+	VehicleID      int64       `json:"vehicle_id"`
+	VIN            string      `json:"vin"`
+	DisplayName    string      `json:"display_name"`
+	Color          interface{} `json:"color"`
+	AccessType     string      `json:"access_type"`
+	GranularAccess struct {
+		HidePrivate bool `json:"hide_private"`
+	} `json:"granular_access"`
+	State           string `json:"state"`
+	InService       bool   `json:"in_service"`
+	IDS             string `json:"id_s"`
+	CalendarEnabled bool   `json:"calendar_enabled"`
+	APIVersion      int    `json:"api_version"`
+}
+
 func generateToken() (*TokenResponse, error) {
 	data := url.Values{}
 	data.Set("grant_type", "client_credentials")
@@ -273,6 +303,50 @@ func exchangeAuthCode(code string, c *fiber.Ctx) (*TokenResponse, error) {
 	return &tokenResp, nil
 }
 
+func getVehicles(token string) (*VehicleResponse, error) {
+	req, err := http.NewRequest("GET", "https://fleet-api.prd.na.vn.cloud.tesla.com/api/1/vehicles", nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %v", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error making request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading response: %v", err)
+	}
+
+	log.Printf("Vehicles response status: %d", resp.StatusCode)
+	log.Printf("Vehicles response body: %s", string(body))
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to get vehicles with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var vehicleResp VehicleResponse
+	if err := json.Unmarshal(body, &vehicleResp); err != nil {
+		return nil, fmt.Errorf("error parsing response: %v", err)
+	}
+
+	return &vehicleResp, nil
+}
+
+func getVirtualKeyURL() string {
+	domain := strings.TrimSpace(string(domainName))
+	domain = strings.ToLower(domain)
+	domain = strings.TrimPrefix(domain, "https://")
+	domain = strings.TrimPrefix(domain, "http://")
+	domain = strings.TrimSuffix(domain, "/")
+	return fmt.Sprintf("https://www.tesla.com/_ak/%s", domain)
+}
+
 func main() {
 	var err error
 	// Read credentials
@@ -394,19 +468,28 @@ func main() {
 			})
 		}
 
+		// Get vehicles after obtaining the token
+		vehicles, err := getVehicles(token.AccessToken)
+		if err != nil {
+			log.Printf("Warning: Failed to get vehicles: %v", err)
+		}
+
 		// Check if the request accepts JSON
 		accepts := c.Accepts("application/json")
 		if accepts == "application/json" {
 			return c.JSON(fiber.Map{
-				"token":   token,
-				"message": "Successfully obtained user access token",
+				"token":    token,
+				"message":  "Successfully obtained user access token",
+				"vehicles": vehicles.Response,
 			})
 		}
 
 		// Otherwise, render the success page
 		return c.Render("callback", fiber.Map{
-			"Title": "Authorization Successful",
-			"Token": token,
+			"Title":         "Authorization Successful",
+			"Token":         token,
+			"Vehicles":      vehicles.Response,
+			"VirtualKeyURL": getVirtualKeyURL(),
 		})
 	})
 
