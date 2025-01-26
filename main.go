@@ -33,6 +33,11 @@ type RegistrationResponse struct {
 	PublicKey      string      `json:"public_key"`
 }
 
+type TeslaAPIResponse struct {
+	Response *RegistrationResponse `json:"response"`
+	Error    string                `json:"error"`
+}
+
 func generateToken() (*TokenResponse, error) {
 	data := url.Values{}
 	data.Set("grant_type", "client_credentials")
@@ -56,15 +61,27 @@ func generateToken() (*TokenResponse, error) {
 }
 
 func registerPartnerAccount(token string) (*RegistrationResponse, error) {
+	// Clean the domain - remove any https:// prefix and ensure lowercase
 	domain := strings.TrimSpace(string(domainName))
+	domain = strings.ToLower(domain)
+	domain = strings.TrimPrefix(domain, "https://")
+	domain = strings.TrimPrefix(domain, "http://")
+	domain = strings.TrimSuffix(domain, "/")
+
+	log.Printf("Using domain for registration: %s", domain)
+
 	payload := map[string]string{
-		"domain": domain,
+		"domain":      domain,
+		"name":        "Tesla Fleet Telemetry Operator",
+		"description": "Fleet telemetry data ingestion service",
 	}
 
 	jsonPayload, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("error marshaling payload: %v", err)
 	}
+
+	log.Printf("Registration payload: %s", string(jsonPayload))
 
 	req, err := http.NewRequest("POST",
 		"https://fleet-api.prd.na.vn.cloud.tesla.com/api/1/partner_accounts",
@@ -88,16 +105,23 @@ func registerPartnerAccount(token string) (*RegistrationResponse, error) {
 		return nil, fmt.Errorf("error reading response: %v", err)
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("registration failed with status %d: %s", resp.StatusCode, string(body))
-	}
+	log.Printf("Registration response status: %d", resp.StatusCode)
+	log.Printf("Registration response body: %s", string(body))
 
-	var regResp RegistrationResponse
-	if err := json.Unmarshal(body, &regResp); err != nil {
+	var teslaResp TeslaAPIResponse
+	if err := json.Unmarshal(body, &teslaResp); err != nil {
 		return nil, fmt.Errorf("error parsing response: %v", err)
 	}
 
-	return &regResp, nil
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return nil, fmt.Errorf("registration failed with status %d: %s", resp.StatusCode, teslaResp.Error)
+	}
+
+	if teslaResp.Response == nil {
+		return nil, fmt.Errorf("empty response from Tesla API")
+	}
+
+	return teslaResp.Response, nil
 }
 
 var (
