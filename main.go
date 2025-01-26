@@ -22,6 +22,8 @@ type TokenResponse struct {
 	RefreshToken string `json:"refresh_token,omitempty"`
 	IdToken      string `json:"id_token,omitempty"`
 	Scope        string `json:"scope,omitempty"`
+	State        string `json:"state,omitempty"`
+	Issuer       string `json:"issuer,omitempty"`
 }
 
 type RegistrationResponse struct {
@@ -235,10 +237,19 @@ func exchangeAuthCode(code string, c *fiber.Ctx) (*TokenResponse, error) {
 	data.Set("code", code)
 	data.Set("redirect_uri", redirectURI)
 	data.Set("audience", "https://fleet-api.prd.na.vn.cloud.tesla.com")
+	data.Set("scope", "openid offline_access vehicle_device_data vehicle_cmds vehicle_charging_cmds energy_device_data energy_cmds")
 
-	resp, err := http.PostForm("https://auth.tesla.com/oauth2/v3/token", data)
+	req, err := http.NewRequest("POST", "https://auth.tesla.com/oauth2/v3/token", strings.NewReader(data.Encode()))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error creating request: %v", err)
+	}
+
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error making request: %v", err)
 	}
 	defer resp.Body.Close()
 
@@ -250,9 +261,13 @@ func exchangeAuthCode(code string, c *fiber.Ctx) (*TokenResponse, error) {
 	log.Printf("Token exchange response status: %d", resp.StatusCode)
 	log.Printf("Token exchange response body: %s", string(body))
 
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("token exchange failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
 	var tokenResp TokenResponse
-	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
-		return nil, err
+	if err := json.Unmarshal(body, &tokenResp); err != nil {
+		return nil, fmt.Errorf("error parsing response: %v", err)
 	}
 
 	return &tokenResp, nil
