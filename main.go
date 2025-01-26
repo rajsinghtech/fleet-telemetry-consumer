@@ -16,9 +16,12 @@ import (
 )
 
 type TokenResponse struct {
-	AccessToken string `json:"access_token"`
-	TokenType   string `json:"token_type"`
-	ExpiresIn   int    `json:"expires_in"`
+	AccessToken  string `json:"access_token"`
+	TokenType    string `json:"token_type"`
+	ExpiresIn    int    `json:"expires_in"`
+	RefreshToken string `json:"refresh_token,omitempty"`
+	IdToken      string `json:"id_token,omitempty"`
+	Scope        string `json:"scope,omitempty"`
 }
 
 type RegistrationResponse struct {
@@ -36,6 +39,13 @@ type RegistrationResponse struct {
 type TeslaAPIResponse struct {
 	Response *RegistrationResponse `json:"response"`
 	Error    string                `json:"error"`
+}
+
+type AuthConfig struct {
+	ClientID    string `json:"client_id"`
+	RedirectURI string `json:"redirect_uri"`
+	State       string `json:"state"`
+	Scope       string `json:"scope"`
 }
 
 func generateToken() (*TokenResponse, error) {
@@ -178,6 +188,76 @@ var (
 	domainName   []byte
 )
 
+func getBaseURL(c *fiber.Ctx) string {
+	protocol := "http"
+	if c.Protocol() == "https" || c.Get("X-Forwarded-Proto") == "https" {
+		protocol = "https"
+	}
+	return fmt.Sprintf("%s://%s", protocol, c.Hostname())
+}
+
+func getRedirectURI(c *fiber.Ctx) string {
+	host := c.Hostname()
+	// Use exact URIs as registered in Tesla Developer Portal
+	if host == "localhost" || host == "localhost:3000" || strings.HasPrefix(host, "127.0.0.1") {
+		return "http://localhost:3000/callback"
+	}
+	return "https://tesla.rajsingh.info/callback"
+}
+
+func generateAuthURL(c *fiber.Ctx) string {
+	redirectURI := getRedirectURI(c)
+	log.Printf("Using redirect URI: %s", redirectURI)
+
+	// Build the URL in the exact same order as the example
+	params := url.Values{}
+	params.Set("client_id", strings.TrimSpace(string(clientID)))
+	params.Set("locale", "en-US")
+	params.Set("prompt", "login")
+	params.Set("redirect_uri", redirectURI)
+	params.Set("response_type", "code")
+	params.Set("scope", "openid user_data vehicle_device_data vehicle_cmds vehicle_charging_cmds energy_device_data energy_cmds offline_access")
+	params.Set("state", "abc123") // Match the example's state value
+
+	authURL := fmt.Sprintf("https://auth.tesla.com/oauth2/v3/authorize?%s", params.Encode())
+	log.Printf("Generated auth URL: %s", authURL)
+	return authURL
+}
+
+func exchangeAuthCode(code string, c *fiber.Ctx) (*TokenResponse, error) {
+	redirectURI := getRedirectURI(c)
+	log.Printf("Using redirect URI for token exchange: %s", redirectURI)
+
+	data := url.Values{}
+	data.Set("grant_type", "authorization_code")
+	data.Set("client_id", strings.TrimSpace(string(clientID)))
+	data.Set("client_secret", strings.TrimSpace(string(clientSecret)))
+	data.Set("code", code)
+	data.Set("redirect_uri", redirectURI)
+	data.Set("audience", "https://fleet-api.prd.na.vn.cloud.tesla.com")
+
+	resp, err := http.PostForm("https://auth.tesla.com/oauth2/v3/token", data)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading response: %v", err)
+	}
+
+	log.Printf("Token exchange response status: %d", resp.StatusCode)
+	log.Printf("Token exchange response body: %s", string(body))
+
+	var tokenResp TokenResponse
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+		return nil, err
+	}
+
+	return &tokenResp, nil
+}
+
 func main() {
 	var err error
 	// Read credentials
@@ -265,6 +345,53 @@ func main() {
 		return c.JSON(fiber.Map{
 			"token":        token,
 			"verification": verifyResp,
+		})
+	})
+
+	// Add the authorization endpoint
+	app.Get("/auth", func(c *fiber.Ctx) error {
+		authURL := generateAuthURL(c)
+		log.Printf("Generated auth URL: %s", authURL)
+		return c.Redirect(authURL)
+	})
+
+	// Add the callback endpoint
+	app.Get("/callback", func(c *fiber.Ctx) error {
+		code := c.Query("code")
+		state := c.Query("state")
+
+		if state != "abc123" { // Match the state from the auth request
+			return c.Status(400).JSON(fiber.Map{
+				"error": "Invalid state parameter",
+			})
+		}
+
+		if code == "" {
+			return c.Status(400).JSON(fiber.Map{
+				"error": "No authorization code provided",
+			})
+		}
+
+		token, err := exchangeAuthCode(code, c)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{
+				"error": "Failed to exchange authorization code: " + err.Error(),
+			})
+		}
+
+		// Check if the request accepts JSON
+		accepts := c.Accepts("application/json")
+		if accepts == "application/json" {
+			return c.JSON(fiber.Map{
+				"token":   token,
+				"message": "Successfully obtained user access token",
+			})
+		}
+
+		// Otherwise, render the success page
+		return c.Render("callback", fiber.Map{
+			"Title": "Authorization Successful",
+			"Token": token,
 		})
 	})
 

@@ -52,6 +52,12 @@
             background-color: #393c41;
             color: #fff;
         }
+        .tesla-button.highlight {
+            background-color: #e82127;
+        }
+        .tesla-button.highlight:hover {
+            background-color: #d01a1f;
+        }
         .description {
             max-width: 600px;
             margin: 0 auto 40px;
@@ -110,6 +116,12 @@
             border-radius: 20px;
             backdrop-filter: blur(8px);
         }
+        .section-divider {
+            width: 100%;
+            height: 1px;
+            background-color: #eee;
+            margin: 30px 0;
+        }
     </style>
 </head>
 <body>
@@ -129,6 +141,19 @@
                 Download Public Key
             </button>
         </div>
+
+        <div class="section-divider"></div>
+
+        <div class="button-container">
+            <h2>User Authorization</h2>
+            <p class="description">
+                Authorize access to your Tesla vehicles to enable fleet telemetry.
+            </p>
+            <button class="tesla-button highlight" onclick="window.location.href='/auth'">
+                Authorize Tesla Account
+            </button>
+        </div>
+
         <div id="responseDisplay" class="response-display">
             <div class="response-section">
                 <h3>Partner Authentication Token:</h3>
@@ -142,12 +167,27 @@
                 <h3>Verification Response:</h3>
                 <pre id="verificationContent"></pre>
             </div>
+            <div class="response-section" id="userTokenSection" style="display: none;">
+                <h3>User Authorization Token:</h3>
+                <pre id="userTokenContent"></pre>
+            </div>
         </div>
         <div id="errorMessage" class="error-message"></div>
         <div id="successMessage" class="success-message"></div>
     </div>
 
     <script>
+        // Check for callback response in URL hash or search params
+        window.onload = function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const code = urlParams.get('code');
+            const state = urlParams.get('state');
+            
+            if (code && state) {
+                displayUserToken({ code, state });
+            }
+        }
+
         async function generateToken() {
             const responseDisplay = document.getElementById('responseDisplay');
             const tokenContent = document.getElementById('tokenContent');
@@ -213,6 +253,21 @@
                 successMessage.style.display = 'none';
                 responseDisplay.style.display = 'none';
             }
+        }
+
+        function displayUserToken(data) {
+            const responseDisplay = document.getElementById('responseDisplay');
+            const userTokenSection = document.getElementById('userTokenSection');
+            const userTokenContent = document.getElementById('userTokenContent');
+            const successMessage = document.getElementById('successMessage');
+            const errorMessage = document.getElementById('errorMessage');
+
+            userTokenContent.textContent = JSON.stringify(data, null, 2);
+            userTokenSection.style.display = 'block';
+            responseDisplay.style.display = 'block';
+            successMessage.textContent = 'User authorization successful!';
+            successMessage.style.display = 'block';
+            errorMessage.style.display = 'none';
         }
     </script>
 </body>

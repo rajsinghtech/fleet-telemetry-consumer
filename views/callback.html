@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Title}}</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: "Gotham Medium", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: #fff;
+            color: #171a20;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            text-align: center;
+        }
+        h1 {
+            font-size: 40px;
+            font-weight: 500;
+            margin-bottom: 30px;
+            color: #2e7d32;
+        }
+        .success-icon {
+            font-size: 64px;
+            color: #2e7d32;
+            margin-bottom: 20px;
+        }
+        .description {
+            max-width: 600px;
+            margin: 0 auto 40px;
+            font-size: 16px;
+            line-height: 1.5;
+            color: #393c41;
+        }
+        .token-display {
+            margin-top: 20px;
+            padding: 20px;
+            background-color: rgba(244, 244, 244, 0.65);
+            border-radius: 20px;
+            text-align: left;
+            word-break: break-all;
+            backdrop-filter: blur(8px);
+        }
+        .token-display h3 {
+            margin-top: 0;
+            margin-bottom: 15px;
+            color: #171a20;
+        }
+        .token-display pre {
+            margin: 0;
+            white-space: pre-wrap;
+            background-color: #fff;
+            padding: 15px;
+            border-radius: 12px;
+            border: 1px solid #ddd;
+        }
+        .tesla-button {
+            background-color: #3e6ae1;
+            color: #fff;
+            border: none;
+            padding: 16px 48px;
+            border-radius: 20px;
+            font-size: 15px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin: 10px;
+            min-width: 264px;
+            backdrop-filter: blur(8px);
+            box-shadow: inset 0 0 0 2px transparent;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .tesla-button:hover {
+            background-color: #3457b1;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="success-icon">✓</div>
+        <h1>Authorization Successful</h1>
+        <p class="description">
+            Your Tesla account has been successfully connected. You can now use the Fleet Telemetry service.
+        </p>
+        <div class="token-display">
+            <h3>Authorization Details:</h3>
+            <pre>{{.Token | printf "%+v"}}</pre>
+        </div>
+        <a href="/" class="tesla-button">Return to Dashboard</a>
+    </div>
+</body>
+</html> 
