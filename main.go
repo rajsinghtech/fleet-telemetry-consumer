@@ -116,6 +116,15 @@ type UserInfo struct {
 	UpdatedAt   int64  `json:"updated_at"`   // Last update timestamp
 }
 
+type TeslaUserResponse struct {
+	Response struct {
+		Email           string `json:"email"`
+		FullName        string `json:"full_name"`
+		ProfileImageURL string `json:"profile_image_url"`
+		VaultUUID       string `json:"vault_uuid"`
+	} `json:"response"`
+}
+
 func generateToken() (*TokenResponse, error) {
 	data := url.Values{}
 	data.Set("grant_type", "client_credentials")
@@ -516,6 +525,41 @@ func getUserInfo(accessToken string) (*UserInfo, error) {
 	return &userInfo, nil
 }
 
+func getTeslaUserInfo(accessToken string) (*TeslaUserResponse, error) {
+	req, err := http.NewRequest("GET", "https://fleet-api.prd.na.vn.cloud.tesla.com/api/1/users/me", nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %v", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error making request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading response: %v", err)
+	}
+
+	log.Printf("Tesla user info response status: %d", resp.StatusCode)
+	log.Printf("Tesla user info response body: %s", string(body))
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to get Tesla user info with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var userResp TeslaUserResponse
+	if err := json.Unmarshal(body, &userResp); err != nil {
+		return nil, fmt.Errorf("error parsing response: %v", err)
+	}
+
+	return &userResp, nil
+}
+
 func main() {
 	var err error
 	// Read credentials
@@ -692,6 +736,12 @@ func main() {
 			log.Printf("Warning: Failed to get user info: %v", err)
 		}
 
+		// Get Tesla-specific user information
+		teslaUser, err := getTeslaUserInfo(token.AccessToken)
+		if err != nil {
+			log.Printf("Warning: Failed to get Tesla user info: %v", err)
+		}
+
 		// Store the Tesla account in the database
 		teslaAccount := &models.TeslaAccount{
 			AccessToken:  token.AccessToken,
@@ -714,6 +764,20 @@ func main() {
 			teslaAccount.Picture = userInfo.Picture
 			teslaAccount.Locale = userInfo.Locale
 			teslaAccount.CountryCode = userInfo.CountryCode
+		}
+
+		// Add Tesla-specific user information if available
+		if teslaUser != nil {
+			if teslaAccount.Name == "" {
+				teslaAccount.Name = teslaUser.Response.FullName
+			}
+			if teslaAccount.Email == "" {
+				teslaAccount.Email = teslaUser.Response.Email
+			}
+			if teslaAccount.Picture == "" {
+				teslaAccount.Picture = teslaUser.Response.ProfileImageURL
+			}
+			teslaAccount.VaultUUID = teslaUser.Response.VaultUUID
 		}
 
 		if err := db.CreateOrUpdateTeslaAccount(teslaAccount); err != nil {
@@ -966,6 +1030,67 @@ func main() {
 		return c.JSON(fiber.Map{
 			"message": "Telemetry configuration successfully deleted",
 			"vin":     vin,
+		})
+	})
+
+	// Add endpoint to delete a Tesla account
+	app.Delete("/api/accounts/:id", func(c *fiber.Ctx) error {
+		accountID, err := strconv.ParseUint(c.Params("id"), 10, 32)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{
+				"error": "Invalid account ID",
+			})
+		}
+
+		// Get the account and its vehicles
+		var account models.TeslaAccount
+		if err := db.DB.Preload("Vehicles").First(&account, accountID).Error; err != nil {
+			return c.Status(404).JSON(fiber.Map{
+				"error": "Account not found",
+			})
+		}
+
+		// Create custom HTTP client that skips TLS verification for localhost
+		tr := &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		}
+		client := &http.Client{Transport: tr}
+
+		// Try to delete telemetry config for each vehicle
+		for _, vehicle := range account.Vehicles {
+			// Make request to Tesla's proxy to delete telemetry config
+			url := fmt.Sprintf("https://localhost:4443/api/1/vehicles/%s/fleet_telemetry_config", vehicle.VIN)
+			req, err := http.NewRequest("DELETE", url, nil)
+			if err != nil {
+				log.Printf("Warning: Failed to create request for deleting telemetry config for vehicle %s: %v", vehicle.VIN, err)
+				continue
+			}
+
+			req.Header.Set("Authorization", "Bearer "+account.AccessToken)
+
+			resp, err := client.Do(req)
+			if err != nil {
+				log.Printf("Warning: Failed to delete telemetry config for vehicle %s: %v", vehicle.VIN, err)
+				continue
+			}
+			resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				log.Printf("Warning: Failed to delete telemetry config for vehicle %s with status %d", vehicle.VIN, resp.StatusCode)
+			}
+		}
+
+		// Delete the account from the database (this will also delete associated vehicles due to CASCADE)
+		if err := db.DB.Delete(&account).Error; err != nil {
+			return c.Status(500).JSON(fiber.Map{
+				"error": "Failed to delete account: " + err.Error(),
+			})
+		}
+
+		return c.JSON(fiber.Map{
+			"message": "Account and associated vehicles successfully deleted",
 		})
 	})
 

@@ -1,10 +1,9 @@
 package db
 
 import (
-	"fmt"
-	"time"
-
 	"fleet-telemetry-consumer/models"
+	"fmt"
+	// "log"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -23,7 +22,13 @@ func InitDB(host, user, password, dbname string, port int) error {
 		return fmt.Errorf("failed to connect to database: %v", err)
 	}
 
-	// Auto migrate the schemas
+	// // Drop existing tables
+	// err = DB.Migrator().DropTable(&models.TeslaVehicle{}, &models.TeslaAccount{})
+	// if err != nil {
+	// 	log.Printf("Warning: Failed to drop tables: %v", err)
+	// }
+
+	// Create tables with new schema
 	err = DB.AutoMigrate(&models.TeslaAccount{}, &models.TeslaVehicle{})
 	if err != nil {
 		return fmt.Errorf("failed to migrate database: %v", err)
@@ -33,39 +38,39 @@ func InitDB(host, user, password, dbname string, port int) error {
 }
 
 // CreateOrUpdateTeslaAccount creates or updates a Tesla account in the database
-func CreateOrUpdateTeslaAccount(token *models.TeslaAccount) error {
-	// Calculate expiration time
-	token.ExpiresAt = time.Now().Add(time.Duration(token.ExpiresIn) * time.Second)
-	token.LastSyncedAt = time.Now()
-
-	// Try to find existing account by access token
+func CreateOrUpdateTeslaAccount(account *models.TeslaAccount) error {
+	// Try to find an existing account with the same UserID
 	var existingAccount models.TeslaAccount
-	result := DB.Where("access_token = ?", token.AccessToken).First(&existingAccount)
+	result := DB.Where("user_id = ?", account.UserID).First(&existingAccount)
 
-	if result.Error == gorm.ErrRecordNotFound {
+	if result.Error == nil {
+		// Update existing account
+		account.ID = existingAccount.ID
+		return DB.Save(account).Error
+	} else if result.Error == gorm.ErrRecordNotFound {
 		// Create new account
-		return DB.Create(token).Error
+		return DB.Create(account).Error
 	}
 
-	// Update existing account
-	return DB.Model(&existingAccount).Updates(token).Error
+	return result.Error
 }
 
 // CreateOrUpdateTeslaVehicle creates or updates a Tesla vehicle in the database
 func CreateOrUpdateTeslaVehicle(vehicle *models.TeslaVehicle) error {
-	vehicle.LastSyncedAt = time.Now()
-
-	// Try to find existing vehicle by VIN
+	// Try to find an existing vehicle with the same VIN
 	var existingVehicle models.TeslaVehicle
 	result := DB.Where("vin = ?", vehicle.VIN).First(&existingVehicle)
 
-	if result.Error == gorm.ErrRecordNotFound {
+	if result.Error == nil {
+		// Update existing vehicle
+		vehicle.ID = existingVehicle.ID
+		return DB.Save(vehicle).Error
+	} else if result.Error == gorm.ErrRecordNotFound {
 		// Create new vehicle
 		return DB.Create(vehicle).Error
 	}
 
-	// Update existing vehicle
-	return DB.Model(&existingVehicle).Updates(vehicle).Error
+	return result.Error
 }
 
 // GetAllTeslaAccounts retrieves all Tesla accounts from the database

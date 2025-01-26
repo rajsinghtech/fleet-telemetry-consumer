@@ -26,8 +26,9 @@ type TeslaAccount struct {
 	Picture     string
 	Locale      string
 	CountryCode string
+	VaultUUID   string // Tesla-specific user identifier
 	// Relationships
-	Vehicles []TeslaVehicle `gorm:"foreignKey:AccountID;references:ID"`
+	Vehicles []TeslaVehicle `gorm:"foreignKey:AccountID;references:ID;constraint:OnDelete:CASCADE"`
 }
 
 // TeslaVehicle represents a Tesla vehicle in our system
@@ -36,7 +37,7 @@ type TeslaVehicle struct {
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 	AccountID     uint         `gorm:"not null"` // Foreign key to TeslaAccount
-	Account       TeslaAccount `gorm:"foreignKey:AccountID"`
+	Account       TeslaAccount `gorm:"foreignKey:AccountID;references:ID;constraint:OnDelete:CASCADE"`
 	TeslaID       int64
 	VehicleID     int64
 	VIN           string `gorm:"uniqueIndex"`
