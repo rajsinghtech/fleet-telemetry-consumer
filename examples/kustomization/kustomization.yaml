@@ -6,7 +6,7 @@ resources:
   - certificate.yaml
   - tlsroute.yaml
   - secrets.yaml
-
+  - public-key-webserver.yaml
 configMapGenerator:
   - name: fleet-telemetry-config
     files:

@@ -26,7 +26,5 @@ services:
       dockerfile: Dockerfile
     ports:
       - "3000:3000"
-    # environment:
-    #   - TESLA_PROXY_URL=https://localhost:4443
     depends_on:
       - tesla-http-proxy

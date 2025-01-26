@@ -29,6 +29,6 @@ COPY static/ static/
 RUN adduser -D appuser
 USER appuser
 
-EXPOSE 8080
+EXPOSE 3000 
 
 CMD ["./main"] 

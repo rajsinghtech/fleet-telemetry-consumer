@@ -10,7 +10,7 @@ reload:
 	make apply
 
 run:
-	docker compose up
+	docker compose up --force-recreate --build
 
 pull-secrets:
 	@echo "Creating static directory if it doesn't exist..."
