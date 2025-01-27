@@ -329,14 +329,52 @@
                     method: 'POST',
                 });
                 const data = await response.json();
+                
                 if (response.ok) {
-                    showResponse('Telemetry Configuration', 'Vehicle successfully programmed for telemetry. The page will refresh when you close this message.', 'success');
-                    reloadAfterClose(document.getElementById('responsePanel'));
+                    const content = document.getElementById('responseContent');
+                    content.innerHTML = `<div style="margin-bottom: 15px;">Vehicle successfully programmed for telemetry. The page will refresh when you close this message.</div>
+                        <div style="font-weight: bold; margin-bottom: 5px;">Tesla Fleet API Response:</div>
+                        <pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; margin: 0;">${JSON.stringify(data, null, 2)}</pre>`;
+                    
+                    const panel = document.getElementById('responsePanel');
+                    panel.className = 'response-panel success';
+                    document.getElementById('responseTitle').textContent = 'Telemetry Configuration';
+                    panel.style.display = 'block';
+                    reloadAfterClose(panel);
                 } else {
-                    showResponse('Error', data.error, 'error');
+                    if (data.error && data.error.startsWith('missing_key:')) {
+                        const panel = document.getElementById('responsePanel');
+                        panel.className = 'response-panel error';
+                        document.getElementById('responseTitle').textContent = 'Virtual Key Required';
+                        const content = document.getElementById('responseContent');
+                        content.innerHTML = `<div style="margin-bottom: 15px;">This vehicle requires a virtual key to be paired before it can be programmed for telemetry.</div>
+                            <a href="https://www.tesla.com/_ak/tesla.rajsingh.info" target="_blank" 
+                               style="background: #2ecc71; color: white; padding: 10px 20px; border-radius: 4px; text-decoration: none; display: inline-block; margin-bottom: 15px;">
+                               Pair Virtual Key
+                            </a>
+                            <div style="font-weight: bold; margin-bottom: 5px;">Tesla Fleet API Response:</div>
+                            <pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; margin: 0;">${JSON.stringify(data, null, 2)}</pre>`;
+                        panel.style.display = 'block';
+                    } else {
+                        const content = document.getElementById('responseContent');
+                        content.innerHTML = `<div style="margin-bottom: 15px; color: #e74c3c;">${data.error}</div>
+                            <div style="font-weight: bold; margin-bottom: 5px;">Tesla Fleet API Response:</div>
+                            <pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; margin: 0;">${JSON.stringify(data, null, 2)}</pre>`;
+                        
+                        const panel = document.getElementById('responsePanel');
+                        panel.className = 'response-panel error';
+                        document.getElementById('responseTitle').textContent = 'Error';
+                        panel.style.display = 'block';
+                    }
                 }
             } catch (error) {
-                showResponse('Error', error.message, 'error');
+                const content = document.getElementById('responseContent');
+                content.innerHTML = `<div style="margin-bottom: 15px; color: #e74c3c;">${error.message}</div>`;
+                
+                const panel = document.getElementById('responsePanel');
+                panel.className = 'response-panel error';
+                document.getElementById('responseTitle').textContent = 'Error';
+                panel.style.display = 'block';
             }
         }
 
@@ -345,12 +383,33 @@
                 const response = await fetch(`/api/vehicles/${vin}/telemetry`);
                 const data = await response.json();
                 if (response.ok) {
-                    showResponse('Telemetry Configuration', data);
+                    const content = document.getElementById('responseContent');
+                    content.innerHTML = `<div style="font-weight: bold; margin-bottom: 5px;">Tesla Fleet API Response:</div>
+                        <pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; margin: 0;">${JSON.stringify(data, null, 2)}</pre>`;
+                    
+                    const panel = document.getElementById('responsePanel');
+                    panel.className = 'response-panel success';
+                    document.getElementById('responseTitle').textContent = 'Telemetry Configuration';
+                    panel.style.display = 'block';
                 } else {
-                    showResponse('Error', data.error, 'error');
+                    const content = document.getElementById('responseContent');
+                    content.innerHTML = `<div style="margin-bottom: 15px; color: #e74c3c;">${data.error}</div>
+                        <div style="font-weight: bold; margin-bottom: 5px;">Tesla Fleet API Response:</div>
+                        <pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; margin: 0;">${JSON.stringify(data, null, 2)}</pre>`;
+                    
+                    const panel = document.getElementById('responsePanel');
+                    panel.className = 'response-panel error';
+                    document.getElementById('responseTitle').textContent = 'Error';
+                    panel.style.display = 'block';
                 }
             } catch (error) {
-                showResponse('Error', error.message, 'error');
+                const content = document.getElementById('responseContent');
+                content.innerHTML = `<div style="margin-bottom: 15px; color: #e74c3c;">${error.message}</div>`;
+                
+                const panel = document.getElementById('responsePanel');
+                panel.className = 'response-panel error';
+                document.getElementById('responseTitle').textContent = 'Error';
+                panel.style.display = 'block';
             }
         }
 
@@ -361,13 +420,35 @@
                 });
                 const data = await response.json();
                 if (response.ok) {
-                    showResponse('Configuration Deleted', 'Telemetry configuration successfully deleted. The page will refresh when you close this message.', 'success');
-                    reloadAfterClose(document.getElementById('responsePanel'));
+                    const content = document.getElementById('responseContent');
+                    content.innerHTML = `<div style="margin-bottom: 15px;">Telemetry configuration successfully deleted. The page will refresh when you close this message.</div>
+                        <div style="font-weight: bold; margin-bottom: 5px;">Tesla Fleet API Response:</div>
+                        <pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; margin: 0;">${JSON.stringify(data, null, 2)}</pre>`;
+                    
+                    const panel = document.getElementById('responsePanel');
+                    panel.className = 'response-panel success';
+                    document.getElementById('responseTitle').textContent = 'Configuration Deleted';
+                    panel.style.display = 'block';
+                    reloadAfterClose(panel);
                 } else {
-                    showResponse('Error', data.error, 'error');
+                    const content = document.getElementById('responseContent');
+                    content.innerHTML = `<div style="margin-bottom: 15px; color: #e74c3c;">${data.error}</div>
+                        <div style="font-weight: bold; margin-bottom: 5px;">Tesla Fleet API Response:</div>
+                        <pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; margin: 0;">${JSON.stringify(data, null, 2)}</pre>`;
+                    
+                    const panel = document.getElementById('responsePanel');
+                    panel.className = 'response-panel error';
+                    document.getElementById('responseTitle').textContent = 'Error';
+                    panel.style.display = 'block';
                 }
             } catch (error) {
-                showResponse('Error', error.message, 'error');
+                const content = document.getElementById('responseContent');
+                content.innerHTML = `<div style="margin-bottom: 15px; color: #e74c3c;">${error.message}</div>`;
+                
+                const panel = document.getElementById('responsePanel');
+                panel.className = 'response-panel error';
+                document.getElementById('responseTitle').textContent = 'Error';
+                panel.style.display = 'block';
             }
         }
 
@@ -435,7 +516,10 @@
     <div class="container">
         <div class="header">
             <h1>{{.Title}}</h1>
-            <a href="/auth" class="header-button">Add Tesla Account</a>
+            <div style="display: flex; gap: 10px;">
+                <a href="https://www.tesla.com/_ak/tesla.rajsingh.info" target="_blank" class="header-button">Pair Virtual Key</a>
+                <a href="/auth" class="header-button">Add Tesla Account</a>
+            </div>
         </div>
 
         {{if .ShowSuccess}}

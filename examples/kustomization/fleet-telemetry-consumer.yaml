@@ -40,21 +40,27 @@ spec:
             - name: tesla-ssl
               mountPath: /secrets/tesla-ssl
         - name: fleet-telemetry-consumer
-          image: quay.io/rajsinghcpre/fleet-telemetry-consumer:refactor-c9e0a4199e390d82a7d239e37d27f31bd1adb1fc
-          command: ["main.go"]
+          image: quay.io/rajsinghcpre/fleet-telemetry-consumer:refactor
+          # command: ["sleep", "infinity"]
+          command: ["/app/main"]
           ports:
             - containerPort: 3000
           volumeMounts:
             - name: tesla-ssl
-              mountPath: /secrets/tesla-ssl
+              mountPath: /app/secrets/tesla-ssl
             - name: fleet-api
-              mountPath: /secrets/fleet-api
+              mountPath: /app/secrets/fleet-api
             - name: pg
-              mountPath: /secrets/pg
+              mountPath: /app/secrets/pg
+            - name: fleet-telemetry-ssl
+              mountPath: /app/secrets/fleet-telemetry-ssl
       volumes:
         - name: tesla-ssl
           secret:
             secretName: tesla-raj-tls
+        - name: fleet-telemetry-ssl
+          secret:
+            secretName: fleet-telemetry-tesla-raj-tls
         - name: fleet-api
           secret:
             secretName: tesla-fleet-api

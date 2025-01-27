@@ -35,4 +35,4 @@ jobs:
         run: |
           docker build . -t fleet-telemetry-consumer:${{ env.image_tag }}
           docker tag fleet-telemetry-consumer:${{ env.image_tag }} quay.io/rajsinghcpre/fleet-telemetry-consumer:${{ env.image_tag }}
-          docker push quay.io/rajsinghcpre/fleet-telemetry-consumer:${{ env.image_tag }}
+          docker push --force quay.io/rajsinghcpre/fleet-telemetry-consumer:${{ env.image_tag }}

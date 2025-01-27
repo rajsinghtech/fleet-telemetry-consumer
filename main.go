@@ -265,14 +265,6 @@ var (
 	domainName   []byte
 )
 
-func getBaseURL(c *fiber.Ctx) string {
-	protocol := "http"
-	if c.Protocol() == "https" || c.Get("X-Forwarded-Proto") == "https" {
-		protocol = "https"
-	}
-	return fmt.Sprintf("%s://%s", protocol, c.Hostname())
-}
-
 func getRedirectURI(c *fiber.Ctx) string {
 	host := c.Hostname()
 	// Use exact URIs as registered in Tesla Developer Portal
@@ -349,12 +341,16 @@ func exchangeAuthCode(code string, c *fiber.Ctx) (*TokenResponse, error) {
 }
 
 func getVehicles(token string) (*VehicleResponse, error) {
-	req, err := http.NewRequest("GET", "https://fleet-api.prd.na.vn.cloud.tesla.com/api/1/vehicles", nil)
+	url := "https://fleet-api.prd.na.vn.cloud.tesla.com/api/1/vehicles"
+	log.Printf("Making request to Fleet API: GET %s", url)
+
+	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("error creating request: %v", err)
 	}
 
 	req.Header.Set("Authorization", "Bearer "+token)
+	log.Printf("Request headers: %v", req.Header)
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -368,8 +364,8 @@ func getVehicles(token string) (*VehicleResponse, error) {
 		return nil, fmt.Errorf("error reading response: %v", err)
 	}
 
-	log.Printf("Vehicles response status: %d", resp.StatusCode)
-	log.Printf("Vehicles response body: %s", string(body))
+	log.Printf("Fleet API Response for GET %s:\nStatus: %d\nHeaders: %v\nBody: %s",
+		url, resp.StatusCode, resp.Header, string(body))
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("failed to get vehicles with status %d: %s", resp.StatusCode, string(body))
@@ -381,15 +377,6 @@ func getVehicles(token string) (*VehicleResponse, error) {
 	}
 
 	return &vehicleResp, nil
-}
-
-func getVirtualKeyURL() string {
-	domain := strings.TrimSpace(string(domainName))
-	domain = strings.ToLower(domain)
-	domain = strings.TrimPrefix(domain, "https://")
-	domain = strings.TrimPrefix(domain, "http://")
-	domain = strings.TrimSuffix(domain, "/")
-	return fmt.Sprintf("https://www.tesla.com/_ak/%s", domain)
 }
 
 // Update configure telemetry function
@@ -465,10 +452,9 @@ func configureTelemetry(vin, accessToken string) error {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 
-	// Create a custom HTTP client that skips TLS verification for localhost
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true, // Skip verification since it's localhost
+			InsecureSkipVerify: true,
 		},
 	}
 	client := &http.Client{Transport: tr}
@@ -480,12 +466,32 @@ func configureTelemetry(vin, accessToken string) error {
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
+	log.Printf("Telemetry configuration response: %s", string(body))
+
+	// Parse the response to check for missing key
+	var result struct {
+		Response struct {
+			UpdatedVehicles int `json:"updated_vehicles"`
+			SkippedVehicles struct {
+				MissingKey []string `json:"missing_key"`
+			} `json:"skipped_vehicles"`
+		} `json:"response"`
+	}
+
+	if err := json.Unmarshal(body, &result); err != nil {
+		return fmt.Errorf("error parsing response: %v", err)
+	}
+
+	// Check if this VIN is in the missing_key list
+	for _, missingVIN := range result.Response.SkippedVehicles.MissingKey {
+		if missingVIN == vin {
+			return fmt.Errorf("missing_key: Virtual key not paired with vehicle. Please pair your virtual key at https://www.tesla.com/_ak/tesla.rajsingh.info")
+		}
+	}
+
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("failed to configure telemetry with status %d: %s", resp.StatusCode, string(body))
 	}
-
-	// Log the response for debugging
-	log.Printf("Telemetry configuration response: %s", string(body))
 
 	return nil
 }
@@ -526,12 +532,16 @@ func getUserInfo(accessToken string) (*UserInfo, error) {
 }
 
 func getTeslaUserInfo(accessToken string) (*TeslaUserResponse, error) {
-	req, err := http.NewRequest("GET", "https://fleet-api.prd.na.vn.cloud.tesla.com/api/1/users/me", nil)
+	url := "https://fleet-api.prd.na.vn.cloud.tesla.com/api/1/users/me"
+	log.Printf("Making request to Fleet API: GET %s", url)
+
+	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("error creating request: %v", err)
 	}
 
 	req.Header.Set("Authorization", "Bearer "+accessToken)
+	log.Printf("Request headers: %v", req.Header)
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -545,8 +555,8 @@ func getTeslaUserInfo(accessToken string) (*TeslaUserResponse, error) {
 		return nil, fmt.Errorf("error reading response: %v", err)
 	}
 
-	log.Printf("Tesla user info response status: %d", resp.StatusCode)
-	log.Printf("Tesla user info response body: %s", string(body))
+	log.Printf("Fleet API Response for GET %s:\nStatus: %d\nHeaders: %v\nBody: %s",
+		url, resp.StatusCode, resp.Header, string(body))
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("failed to get Tesla user info with status %d: %s", resp.StatusCode, string(body))
