@@ -14,10 +14,14 @@
   "records": {
     "alerts": ["logger"],
     "errors": ["logger"],
-    "V": ["logger"]
+    "V": ["logger", "kafka"]
   },
   "tls": {
     "server_cert": "/etc/ssl/certs/tls.crt",
     "server_key": "/etc/ssl/certs/tls.key"
+  },
+  "kafka": {
+    "bootstrap.servers": "tesla-kafka-brokers.tesla.svc.cluster.local:9092",
+    "queue.buffering.max.messages": 1000000
   }
 }

@@ -16,6 +16,7 @@ import (
 
 	"fleet-telemetry-consumer/db"
 	"fleet-telemetry-consumer/models"
+	"fleet-telemetry-consumer/telemetry"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/template/html/v2"
@@ -622,6 +623,23 @@ func main() {
 	)
 	if err != nil {
 		log.Fatal("Error initializing database:", err)
+	}
+
+	// Initialize Kafka consumer
+	consumer, err := telemetry.NewConsumer(
+		"tesla-kafka-brokers.tesla.svc.cluster.local:9092",  // Kafka broker
+		"tesla_V", // Topic name
+		"tesla-fleet-consumer",  // Consumer group ID
+	)
+	if err != nil {
+		log.Printf("Warning: Failed to create Kafka consumer: %v", err)
+	} else {
+		// Start the consumer in a goroutine
+		go func() {
+			if err := consumer.Start(); err != nil {
+				log.Printf("Error running Kafka consumer: %v", err)
+			}
+		}()
 	}
 
 	// Create a new engine
