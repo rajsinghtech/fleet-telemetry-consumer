@@ -12,7 +12,10 @@ require (
 	gorm.io/gorm v1.25.5
 )
 
-require github.com/confluentinc/confluent-kafka-go/v2 v2.3.0
+require (
+	github.com/confluentinc/confluent-kafka-go/v2 v2.3.0
+	google.golang.org/protobuf v1.36.4
+)
 
 require (
 	github.com/andybalholm/brotli v1.0.5 // indirect
@@ -35,5 +38,4 @@ require (
 	golang.org/x/crypto v0.14.0 // indirect
 	golang.org/x/sys v0.22.0 // indirect
 	golang.org/x/text v0.16.0 // indirect
-	google.golang.org/protobuf v1.36.4 // indirect
 )
