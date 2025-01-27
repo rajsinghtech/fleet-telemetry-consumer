@@ -40,7 +40,7 @@ spec:
             - name: tesla-ssl
               mountPath: /secrets/tesla-ssl
         - name: fleet-telemetry-consumer
-          image: quay.io/rajsinghcpre/fleet-telemetry-consumer:v0.0.27
+          image: quay.io/rajsinghcpre/fleet-telemetry-consumer:refactor-c9e0a4199e390d82a7d239e37d27f31bd1adb1fc
           command: ["main.go"]
           ports:
             - containerPort: 3000

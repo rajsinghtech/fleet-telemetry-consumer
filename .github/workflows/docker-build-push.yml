@@ -17,8 +17,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
-      - name: Log in to Quay.io (only if pushing)
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Log in to Quay.io
         run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login quay.io -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
 
       - name: Get tag or branch name
@@ -29,15 +28,11 @@ jobs:
           else
             # Get branch name and replace / with - for Docker tag compatibility
             BRANCH_NAME=$(echo ${GITHUB_REF#refs/heads/} | sed 's/\//-/g')
-            echo "image_tag=${BRANCH_NAME}-${{ github.sha }}" >> $GITHUB_ENV
+            echo "image_tag=${BRANCH_NAME}" >> $GITHUB_ENV
           fi
 
-      - name: Build Docker Image
-        run: docker build . -t fleet-telemetry-consumer:${{ env.image_tag }}
-
-      - name: Tag and Push Docker Image
+      - name: Build and Push Docker Image
         run: |
+          docker build . -t fleet-telemetry-consumer:${{ env.image_tag }}
           docker tag fleet-telemetry-consumer:${{ env.image_tag }} quay.io/rajsinghcpre/fleet-telemetry-consumer:${{ env.image_tag }}
-          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            docker push quay.io/rajsinghcpre/fleet-telemetry-consumer:${{ env.image_tag }}
-          fi
+          docker push quay.io/rajsinghcpre/fleet-telemetry-consumer:${{ env.image_tag }}
