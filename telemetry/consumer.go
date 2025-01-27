@@ -1,7 +1,6 @@
 package telemetry
 
 import (
-	"encoding/base64"
 	"fmt"
 	"log"
 	"os"
@@ -84,15 +83,10 @@ func (c *Consumer) Start() error {
 }
 
 func (c *Consumer) handleMessage(msg *kafka.Message) error {
-	// The message value should be a base64 encoded protobuf
-	data, err := base64.StdEncoding.DecodeString(string(msg.Value))
-	if err != nil {
-		return fmt.Errorf("failed to decode base64 message: %v", err)
-	}
-
-	// Unmarshal the protobuf message
+	// The message value should be raw protobuf data
+	// Unmarshal the protobuf message directly
 	payload := &protos.Payload{}
-	if err := proto.Unmarshal(data, payload); err != nil {
+	if err := proto.Unmarshal(msg.Value, payload); err != nil {
 		return fmt.Errorf("failed to unmarshal protobuf: %v", err)
 	}
 
