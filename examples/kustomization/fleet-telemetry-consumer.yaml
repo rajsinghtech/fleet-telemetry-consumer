@@ -13,20 +13,17 @@ spec:
       labels:
         app: fleet-telemetry-consumer
     spec:
-      securityContext:
-        runAsNonRoot: true
-        seccompProfile:
-          type: RuntimeDefault
       containers:
         - name: tesla-http-proxy
           image: tesla/vehicle-command:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 4443
           env:
             - name: TESLA_HTTP_PROXY_TLS_CERT
-              value: /config/tls.crt
+              value: /secrets/tesla-ssl/tls.crt
             - name: TESLA_HTTP_PROXY_TLS_KEY
-              value: /config/tls.key
+              value: /secrets/tesla-ssl/tls.key
             - name: TESLA_HTTP_PROXY_HOST
               value: "0.0.0.0"
             - name: TESLA_HTTP_PROXY_PORT
@@ -34,36 +31,36 @@ spec:
             - name: TESLA_HTTP_PROXY_TIMEOUT
               value: "10s"
             - name: TESLA_KEY_FILE
-              value: /secret/private-key.pem
+              value: /secrets/fleet-api/private-key.pem
             - name: TESLA_VERBOSE
               value: "true"
           volumeMounts:
-            - name: certs
-              mountPath: /config
-            - name: fleet-key-secret
-              mountPath: /secret
+            - name: fleet-api
+              mountPath: /secrets/fleet-api
+            - name: tesla-ssl
+              mountPath: /secrets/tesla-ssl
         - name: fleet-telemetry-consumer
           image: quay.io/rajsinghcpre/fleet-telemetry-consumer:v0.0.27
-          command: ["/fleet-telemetry-consumer", "-config=/etc/fleet-telemetry-consumer/config.json"]
+          command: ["main.go"]
           ports:
             - containerPort: 3000
           volumeMounts:
-            - name: config
-              mountPath: /etc/fleet-telemetry-consumer
-            - name: certs
-              mountPath: /etc/ssl/certs
-            - name: pg-secret
+            - name: tesla-ssl
+              mountPath: /secrets/tesla-ssl
+            - name: fleet-api
+              mountPath: /secrets/fleet-api
+            - name: pg
               mountPath: /secrets/pg
       volumes:
-      - name: config
-        configMap:
-          name: fleet-telemetry-consumer-config
-      - name: certs
-        secret:
-          secretName: tesla-raj-tls
-      - name: pg-secret
-        secret:
-          secretName: fleet-telemetry-consumer-db-app
+        - name: tesla-ssl
+          secret:
+            secretName: tesla-raj-tls
+        - name: fleet-api
+          secret:
+            secretName: tesla-fleet-api
+        - name: pg
+          secret:
+            secretName: fleet-telemetry-consumer-db-app
 ---
 apiVersion: v1
 kind: Service
@@ -77,3 +74,27 @@ spec:
       port: 80
       targetPort: 3000
   type: ClusterIP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: fleet-telemetry-consumer
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: robbinsdale
+      namespace: envoy-gateway-system
+  hostnames:
+    - "tesla.rajsingh.info"
+  rules:
+    - backendRefs:
+        - group: ""
+          kind: Service
+          name: fleet-telemetry-consumer
+          port: 80
+          weight: 1
+      matches:
+        - path:
+            type: PathPrefix
+            value: /

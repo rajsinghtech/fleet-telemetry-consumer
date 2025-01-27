@@ -6,14 +6,22 @@ services:
     ports:
       - "4443:4443"
     environment:
-      - TESLA_HTTP_PROXY_TLS_CERT=/config/tls.crt
-      - TESLA_HTTP_PROXY_TLS_KEY=/config/tls.key
+      - TESLA_HTTP_PROXY_TLS_CERT=/secrets/tesla-ssl/tls.crt
+      - TESLA_HTTP_PROXY_TLS_KEY=/secrets/tesla-ssl/tls.key
       - TESLA_HTTP_PROXY_HOST=0.0.0.0
       - TESLA_HTTP_PROXY_PORT=4443
       - TESLA_HTTP_PROXY_TIMEOUT=10s
       - TESLA_KEY_FILE=/secret/private-key.pem
       - TESLA_VERBOSE=true
     volumes:
-      - ./secrets/ssl/tls.crt:/config/tls.crt:ro
-      - ./secrets/ssl/tls.key:/config/tls.key:ro
+      - ./secrets/tesla-ssl/tls.crt:/secrets/tesla-ssl/tls.crt:ro
+      - ./secrets/tesla-ssl/tls.key:/secrets/tesla-ssl/tls.key:ro
       - ./secrets/fleet-api/private-key.pem:/secret/private-key.pem:ro
+  # fleet-telemetry-consumer:
+  #   build: 
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   ports:
+  #     - "3000:3000"
+  #   depends_on:
+  #     - tesla-http-proxy

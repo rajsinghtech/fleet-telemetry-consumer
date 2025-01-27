@@ -8,6 +8,7 @@ resources:
   - secrets.yaml
   - public-key-webserver.yaml
   - pg.yaml
+  - fleet-telemetry-consumer.yaml
 configMapGenerator:
   - name: fleet-telemetry-config
     files:

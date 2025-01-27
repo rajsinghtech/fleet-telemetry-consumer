@@ -398,7 +398,7 @@ func configureTelemetry(vin, accessToken string) error {
 	proxyURL := "https://localhost:4443"
 
 	// Read the CA certificate
-	caCert, err := os.ReadFile("./secrets/ssl/tls.crt")
+	caCert, err := os.ReadFile("./secrets/fleet-telemetry-ssl/tls.crt")
 	if err != nil {
 		return fmt.Errorf("error reading CA certificate: %v", err)
 	}

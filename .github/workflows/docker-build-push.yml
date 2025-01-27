@@ -21,22 +21,23 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login quay.io -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
 
-      - name: Get tag or commit SHA
+      - name: Get tag or branch name
         id: vars
         run: |
           if [[ "${{ github.ref }}" == refs/tags/* ]]; then
             echo "image_tag=${{ github.ref_name }}" >> $GITHUB_ENV
           else
-            echo "image_tag=${{ github.sha }}" >> $GITHUB_ENV
+            # Get branch name and replace / with - for Docker tag compatibility
+            BRANCH_NAME=$(echo ${GITHUB_REF#refs/heads/} | sed 's/\//-/g')
+            echo "image_tag=${BRANCH_NAME}-${{ github.sha }}" >> $GITHUB_ENV
           fi
 
       - name: Build Docker Image
         run: docker build . -t fleet-telemetry-consumer:${{ env.image_tag }}
 
-      - name: Tag Docker Image (only if pushing)
-        if: startsWith(github.ref, 'refs/tags/')
-        run: docker tag fleet-telemetry-consumer:${{ env.image_tag }} quay.io/rajsinghcpre/fleet-telemetry-consumer:${{ env.image_tag }}
-
-      - name: Push Docker Image (only if pushing)
-        if: startsWith(github.ref, 'refs/tags/')
-        run: docker push quay.io/rajsinghcpre/fleet-telemetry-consumer:${{ env.image_tag }}
+      - name: Tag and Push Docker Image
+        run: |
+          docker tag fleet-telemetry-consumer:${{ env.image_tag }} quay.io/rajsinghcpre/fleet-telemetry-consumer:${{ env.image_tag }}
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            docker push quay.io/rajsinghcpre/fleet-telemetry-consumer:${{ env.image_tag }}
+          fi
