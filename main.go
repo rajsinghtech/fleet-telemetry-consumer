@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -294,18 +295,22 @@ func generateAuthURL(c *fiber.Ctx) string {
 	return authURL
 }
 
-func exchangeAuthCode(code string, c *fiber.Ctx) (*TokenResponse, error) {
-	redirectURI := getRedirectURI(c)
-	log.Printf("Using redirect URI for token exchange: %s", redirectURI)
+func refreshTeslaToken(refreshToken string) (*TokenResponse, error) {
+	// Create a custom HTTP client with proper TLS configuration
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				MinVersion: tls.VersionTLS12,
+			},
+		},
+	}
 
 	data := url.Values{}
-	data.Set("grant_type", "authorization_code")
+	data.Set("grant_type", "refresh_token")
+	data.Set("refresh_token", refreshToken)
 	data.Set("client_id", strings.TrimSpace(string(clientID)))
 	data.Set("client_secret", strings.TrimSpace(string(clientSecret)))
-	data.Set("code", code)
-	data.Set("redirect_uri", redirectURI)
-	data.Set("audience", "https://fleet-api.prd.na.vn.cloud.tesla.com")
-	data.Set("scope", "openid offline_access vehicle_device_data vehicle_cmds vehicle_charging_cmds energy_device_data energy_cmds")
+	data.Set("scope", "openid vehicle_device_data vehicle_cmds vehicle_charging_cmds")
 
 	req, err := http.NewRequest("POST", "https://auth.tesla.com/oauth2/v3/token", strings.NewReader(data.Encode()))
 	if err != nil {
@@ -314,23 +319,72 @@ func exchangeAuthCode(code string, c *fiber.Ctx) (*TokenResponse, error) {
 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("error making request: %v", err)
 	}
 	defer resp.Body.Close()
 
+	// Read and log the response body for debugging
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("error reading response: %v", err)
+		return nil, fmt.Errorf("error reading response body: %v", err)
 	}
 
-	log.Printf("Token exchange response status: %d", resp.StatusCode)
-	log.Printf("Token exchange response body: %s", string(body))
+	log.Printf("Token refresh response (status %d): %s", resp.StatusCode, string(body))
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("token exchange failed with status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("failed to refresh token with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var tokenResp TokenResponse
+	if err := json.Unmarshal(body, &tokenResp); err != nil {
+		return nil, fmt.Errorf("error parsing response: %v", err)
+	}
+
+	return &tokenResp, nil
+}
+
+func exchangeAuthorizationCode(code string, redirectURI string) (*TokenResponse, error) {
+	// Create a custom HTTP client with proper TLS configuration
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				MinVersion: tls.VersionTLS12,
+			},
+		},
+	}
+
+	data := url.Values{}
+	data.Set("grant_type", "authorization_code")
+	data.Set("client_id", strings.TrimSpace(string(clientID)))
+	data.Set("client_secret", strings.TrimSpace(string(clientSecret)))
+	data.Set("code", code)
+	data.Set("redirect_uri", redirectURI)
+
+	req, err := http.NewRequest("POST", "https://auth.tesla.com/oauth2/v3/token", strings.NewReader(data.Encode()))
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %v", err)
+	}
+
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error making request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Read and log the response body for debugging
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading response body: %v", err)
+	}
+
+	log.Printf("Token exchange response (status %d): %s", resp.StatusCode, string(body))
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to exchange token with status %d: %s", resp.StatusCode, string(body))
 	}
 
 	var tokenResp TokenResponse
@@ -386,7 +440,7 @@ func configureTelemetry(vin, accessToken string) error {
 	proxyURL := "https://localhost:4443"
 
 	// Read the CA certificate
-	caCert, err := os.ReadFile("./secrets/fleet-telemetry-ssl/tls.crt")
+	caCert, err := os.ReadFile("./secrets/tesla-ssl/tls.crt")
 	if err != nil {
 		return fmt.Errorf("error reading CA certificate: %v", err)
 	}
@@ -627,9 +681,9 @@ func main() {
 
 	// Initialize Kafka consumer
 	consumer, err := telemetry.NewConsumer(
-		"tesla-kafka-brokers.tesla.svc.cluster.local:9092",  // Kafka broker
-		"tesla_V", // Topic name
-		"tesla-fleet-consumer",  // Consumer group ID
+		"tesla-kafka-brokers.tesla.svc.cluster.local:9092", // Kafka broker
+		"tesla_V",              // Topic name
+		"tesla-fleet-consumer", // Consumer group ID
 	)
 	if err != nil {
 		log.Printf("Warning: Failed to create Kafka consumer: %v", err)
@@ -745,7 +799,9 @@ func main() {
 			})
 		}
 
-		token, err := exchangeAuthCode(code, c)
+		// Use the same redirect URI as used in the authorization request
+		redirectURI := getRedirectURI(c)
+		token, err := exchangeAuthorizationCode(code, redirectURI)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{
 				"error": "Failed to exchange authorization code: " + err.Error(),
@@ -1119,6 +1175,244 @@ func main() {
 
 		return c.JSON(fiber.Map{
 			"message": "Account and associated vehicles successfully deleted",
+		})
+	})
+
+	// Add new endpoint to get telemetry data for charts
+	app.Get("/api/vehicles/:vin/telemetry-data", func(c *fiber.Ctx) error {
+		vin := c.Params("vin")
+
+		// Get speed data
+		speedData, err := db.GetTelemetryDataForVehicle(vin, "VehicleSpeed", 100)
+		if err != nil {
+			log.Printf("Error getting speed data: %v", err)
+		}
+
+		// Get battery range data
+		batteryData, err := db.GetTelemetryDataForVehicle(vin, "EstBatteryRange", 100)
+		if err != nil {
+			log.Printf("Error getting battery data: %v", err)
+		}
+
+		// Get location data
+		locationData, err := db.GetTelemetryDataForVehicle(vin, "Location", 100)
+		if err != nil {
+			log.Printf("Error getting location data: %v", err)
+		}
+
+		// Get acceleration data
+		lateralAccData, err := db.GetTelemetryDataForVehicle(vin, "LateralAcceleration", 100)
+		if err != nil {
+			log.Printf("Error getting lateral acceleration data: %v", err)
+		}
+		longAccData, err := db.GetTelemetryDataForVehicle(vin, "LongitudinalAcceleration", 100)
+		if err != nil {
+			log.Printf("Error getting longitudinal acceleration data: %v", err)
+		}
+
+		// Process speed data
+		var speedPoints []map[string]interface{}
+		for _, d := range speedData {
+			if d.DoubleValue != nil {
+				speedPoints = append(speedPoints, map[string]interface{}{
+					"timestamp": d.CreatedAt.UnixMilli(),
+					"value":     *d.DoubleValue,
+				})
+			}
+		}
+
+		// Process battery data
+		var batteryPoints []map[string]interface{}
+		for _, d := range batteryData {
+			if d.DoubleValue != nil {
+				batteryPoints = append(batteryPoints, map[string]interface{}{
+					"timestamp": d.CreatedAt.UnixMilli(),
+					"value":     *d.DoubleValue,
+				})
+			}
+		}
+
+		// Process location data
+		var locationPoints []map[string]interface{}
+		for _, d := range locationData {
+			if d.Latitude != nil && d.Longitude != nil {
+				locationPoints = append(locationPoints, map[string]interface{}{
+					"timestamp": d.CreatedAt.UnixMilli(),
+					"latitude":  *d.Latitude,
+					"longitude": *d.Longitude,
+				})
+			}
+		}
+
+		// Process acceleration data
+		var accelerationPoints []map[string]interface{}
+		lateralMap := make(map[int64]float64)
+		longitudinalMap := make(map[int64]float64)
+
+		// Map lateral acceleration data
+		for _, d := range lateralAccData {
+			if d.DoubleValue != nil {
+				lateralMap[d.CreatedAt.UnixMilli()] = *d.DoubleValue
+			}
+		}
+
+		// Map longitudinal acceleration data and combine with lateral
+		for _, d := range longAccData {
+			if d.DoubleValue != nil {
+				ts := d.CreatedAt.UnixMilli()
+				longitudinalMap[ts] = *d.DoubleValue
+
+				// If we have both components, add a point
+				if lateral, ok := lateralMap[ts]; ok {
+					accelerationPoints = append(accelerationPoints, map[string]interface{}{
+						"timestamp":    ts,
+						"lateral":      lateral,
+						"longitudinal": *d.DoubleValue,
+					})
+				}
+			}
+		}
+
+		// Sort all points by timestamp
+		sort.Slice(speedPoints, func(i, j int) bool {
+			return speedPoints[i]["timestamp"].(int64) < speedPoints[j]["timestamp"].(int64)
+		})
+		sort.Slice(batteryPoints, func(i, j int) bool {
+			return batteryPoints[i]["timestamp"].(int64) < batteryPoints[j]["timestamp"].(int64)
+		})
+		sort.Slice(locationPoints, func(i, j int) bool {
+			return locationPoints[i]["timestamp"].(int64) < locationPoints[j]["timestamp"].(int64)
+		})
+		sort.Slice(accelerationPoints, func(i, j int) bool {
+			return accelerationPoints[i]["timestamp"].(int64) < accelerationPoints[j]["timestamp"].(int64)
+		})
+
+		return c.JSON(fiber.Map{
+			"speed":        speedPoints,
+			"battery":      batteryPoints,
+			"location":     locationPoints,
+			"acceleration": accelerationPoints,
+		})
+	})
+
+	// Add endpoint to get all vehicle locations
+	app.Get("/api/vehicles/locations", func(c *fiber.Ctx) error {
+		// Get all vehicles from database
+		var vehicles []models.TeslaVehicle
+		if err := db.DB.Find(&vehicles).Error; err != nil {
+			return c.Status(500).JSON(fiber.Map{
+				"error": "Failed to fetch vehicles: " + err.Error(),
+			})
+		}
+
+		// For each vehicle, get its latest location and other telemetry data
+		var vehicleLocations []map[string]interface{}
+		for _, vehicle := range vehicles {
+			// Get latest location
+			var latestLocation models.TelemetryData
+			if err := db.DB.Where("vin = ? AND key = ? AND latitude IS NOT NULL AND longitude IS NOT NULL",
+				vehicle.VIN, "Location").
+				Order("created_at DESC").
+				First(&latestLocation).Error; err != nil {
+				continue // Skip if no location found
+			}
+
+			// Get latest battery level
+			var batteryData models.TelemetryData
+			db.DB.Where("vin = ? AND key = ? AND double_value IS NOT NULL",
+				vehicle.VIN, "EstBatteryRange").
+				Order("created_at DESC").
+				First(&batteryData)
+
+			// Get charging state
+			var chargingData models.TelemetryData
+			db.DB.Where("vin = ? AND key = ? AND charging_state IS NOT NULL",
+				vehicle.VIN, "ChargingState").
+				Order("created_at DESC").
+				First(&chargingData)
+
+			// Get vehicle speed
+			var speedData models.TelemetryData
+			db.DB.Where("vin = ? AND key = ? AND double_value IS NOT NULL",
+				vehicle.VIN, "VehicleSpeed").
+				Order("created_at DESC").
+				First(&speedData)
+
+			if latestLocation.Latitude != nil && latestLocation.Longitude != nil {
+				vehicleInfo := map[string]interface{}{
+					"vin":         vehicle.VIN,
+					"displayName": vehicle.DisplayName,
+					"latitude":    *latestLocation.Latitude,
+					"longitude":   *latestLocation.Longitude,
+					"timestamp":   latestLocation.CreatedAt,
+					"state":       vehicle.State,
+				}
+
+				// Add battery level if available
+				if batteryData.DoubleValue != nil {
+					vehicleInfo["batteryLevel"] = *batteryData.DoubleValue
+				}
+
+				// Add charging state if available
+				if chargingData.ChargingState != nil {
+					vehicleInfo["chargingState"] = *chargingData.ChargingState
+				}
+
+				// Add speed if available
+				if speedData.DoubleValue != nil {
+					vehicleInfo["speed"] = *speedData.DoubleValue
+				}
+
+				vehicleLocations = append(vehicleLocations, vehicleInfo)
+			}
+		}
+
+		return c.JSON(vehicleLocations)
+	})
+
+	// Add endpoint to refresh Tesla account token
+	app.Post("/api/accounts/:id/refresh", func(c *fiber.Ctx) error {
+		accountID, err := strconv.ParseUint(c.Params("id"), 10, 32)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{
+				"error": "Invalid account ID",
+			})
+		}
+
+		// Get the account
+		var account models.TeslaAccount
+		if err := db.DB.First(&account, accountID).Error; err != nil {
+			return c.Status(404).JSON(fiber.Map{
+				"error": "Account not found",
+			})
+		}
+
+		// Refresh the token
+		tokenResp, err := refreshTeslaToken(account.RefreshToken)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{
+				"error": "Failed to refresh token: " + err.Error(),
+			})
+		}
+
+		// Update account with new token information
+		account.AccessToken = tokenResp.AccessToken
+		account.RefreshToken = tokenResp.RefreshToken
+		account.TokenType = tokenResp.TokenType
+		account.ExpiresIn = tokenResp.ExpiresIn
+		account.ExpiresAt = time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
+		account.Scope = tokenResp.Scope
+
+		// Save the updated account
+		if err := db.CreateOrUpdateTeslaAccount(&account); err != nil {
+			return c.Status(500).JSON(fiber.Map{
+				"error": "Failed to update account: " + err.Error(),
+			})
+		}
+
+		return c.JSON(fiber.Map{
+			"message":    "Token refreshed successfully",
+			"expires_at": account.ExpiresAt,
 		})
 	})
 

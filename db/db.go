@@ -3,6 +3,8 @@ package db
 import (
 	"fleet-telemetry-consumer/models"
 	"fmt"
+	"log"
+
 	// "log"
 
 	"gorm.io/driver/postgres"
@@ -28,48 +30,29 @@ func InitDB(host, user, password, dbname string, port int) error {
 	// 	log.Printf("Warning: Failed to drop tables: %v", err)
 	// }
 
-	// Create tables with new schema
-	err = DB.AutoMigrate(&models.TeslaAccount{}, &models.TeslaVehicle{})
+	// Auto migrate the schemas
+	err = DB.AutoMigrate(
+		&models.TeslaAccount{},
+		&models.TeslaVehicle{},
+		&models.TelemetryData{},
+	)
 	if err != nil {
 		return fmt.Errorf("failed to migrate database: %v", err)
 	}
 
+	log.Println("Database initialized successfully")
 	return nil
 }
 
 // CreateOrUpdateTeslaAccount creates or updates a Tesla account in the database
 func CreateOrUpdateTeslaAccount(account *models.TeslaAccount) error {
-	// Try to find an existing account with the same UserID
-	var existingAccount models.TeslaAccount
-	result := DB.Where("user_id = ?", account.UserID).First(&existingAccount)
-
-	if result.Error == nil {
-		// Update existing account
-		account.ID = existingAccount.ID
-		return DB.Save(account).Error
-	} else if result.Error == gorm.ErrRecordNotFound {
-		// Create new account
-		return DB.Create(account).Error
-	}
-
+	result := DB.Save(account)
 	return result.Error
 }
 
 // CreateOrUpdateTeslaVehicle creates or updates a Tesla vehicle in the database
 func CreateOrUpdateTeslaVehicle(vehicle *models.TeslaVehicle) error {
-	// Try to find an existing vehicle with the same VIN
-	var existingVehicle models.TeslaVehicle
-	result := DB.Where("vin = ?", vehicle.VIN).First(&existingVehicle)
-
-	if result.Error == nil {
-		// Update existing vehicle
-		vehicle.ID = existingVehicle.ID
-		return DB.Save(vehicle).Error
-	} else if result.Error == gorm.ErrRecordNotFound {
-		// Create new vehicle
-		return DB.Create(vehicle).Error
-	}
-
+	result := DB.Save(vehicle)
 	return result.Error
 }
 
@@ -102,4 +85,40 @@ func GetAccountByAccessToken(accessToken string) (*models.TeslaAccount, error) {
 		return nil, result.Error
 	}
 	return &account, nil
+}
+
+// StoreTelemetryData stores a telemetry data point in the database
+func StoreTelemetryData(data *models.TelemetryData) error {
+	result := DB.Create(data)
+	return result.Error
+}
+
+// GetTelemetryDataForVehicle retrieves telemetry data for a specific vehicle and key
+func GetTelemetryDataForVehicle(vin string, key string, limit int) ([]models.TelemetryData, error) {
+	var data []models.TelemetryData
+	result := DB.Where("vin = ? AND key = ?", vin, key).
+		Order("created_at DESC").
+		Limit(limit).
+		Find(&data)
+	return data, result.Error
+}
+
+// GetLatestTelemetryDataForVehicle retrieves the latest telemetry data points for a vehicle
+func GetLatestTelemetryDataForVehicle(vin string) (map[string]models.TelemetryData, error) {
+	var data []models.TelemetryData
+	subQuery := DB.Model(&models.TelemetryData{}).
+		Select("DISTINCT ON (key) *").
+		Where("vin = ?", vin).
+		Order("key, created_at DESC")
+
+	result := DB.Table("(?) as sub", subQuery).
+		Find(&data)
+
+	// Convert to map for easier access
+	dataMap := make(map[string]models.TelemetryData)
+	for _, d := range data {
+		dataMap[d.Key] = d
+	}
+
+	return dataMap, result.Error
 }
