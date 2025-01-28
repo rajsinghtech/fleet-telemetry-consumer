@@ -17,11 +17,16 @@ services:
       - ./secrets/tesla-ssl/tls.crt:/secrets/tesla-ssl/tls.crt:ro
       - ./secrets/tesla-ssl/tls.key:/secrets/tesla-ssl/tls.key:ro
       - ./secrets/fleet-api/private-key.pem:/secret/private-key.pem:ro
-  # fleet-telemetry-consumer:
-  #   build: 
-  #     context: .
-  #     dockerfile: Dockerfile
-  #   ports:
-  #     - "3000:3000"
-  #   depends_on:
-  #     - tesla-http-proxy
+  fleet-telemetry-consumer:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    depends_on:
+      - tesla-http-proxy
+    volumes:
+      - ./secrets/fleet-telemetry-ssl/:/app/secrets/fleet-telemetry-ssl:ro
+      - ./secrets/pg/:/app/secrets/pg:ro
+      - ./secrets/fleet-api/:/app/secrets/fleet-api:ro
+      - ./secrets/tesla-ssl/:/app/secrets/tesla-ssl:ro
