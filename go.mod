@@ -3,7 +3,7 @@ module github.com/rajsinghtech/fleet-telemetry-consumer
 go 1.22
 
 require (
-	github.com/aws/aws-sdk-go v1.55.5
+	github.com/aws/aws-sdk-go v1.55.8
 	github.com/confluentinc/confluent-kafka-go v1.9.2
 	github.com/lib/pq v1.10.9
 	github.com/prometheus/client_golang v1.20.5
