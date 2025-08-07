@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM golang:1.22.5-bullseye AS build
+FROM golang:1.24.6-bullseye AS build
 
 # Install build dependencies and librdkafka dependencies
 RUN apt-get update && apt-get install -y \
