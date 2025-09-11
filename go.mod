@@ -1,6 +1,6 @@
 module github.com/rajsinghtech/fleet-telemetry-consumer
 
-go 1.22
+go 1.23
 
 require (
 	github.com/aws/aws-sdk-go v1.55.5
@@ -8,7 +8,7 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/prometheus/client_golang v1.20.5
 	github.com/teslamotors/fleet-telemetry v0.3.2
-	google.golang.org/protobuf v1.35.1
+	google.golang.org/protobuf v1.36.9
 )
 
 require (
